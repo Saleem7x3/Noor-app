@@ -1,0 +1,6 @@
+{
+  "name": "Noor Prayer",
+  "description": "Modern Islamic Prayer & Spiritual Habit Tracker with Muslim World League calculation, Jama'ah countdowns, Morning/Evening/Bedtime Athkaar, and weekly consistency analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

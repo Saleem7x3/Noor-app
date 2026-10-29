@@ -1,0 +1,37 @@
+<resources>
+    <string name="app_name">Noor Prayer</string>
+    <string name="header_subtitle">ISLAMIC PRAYER &amp; HABIT TRACKER</string>
+    <string name="mode_showcase">3-Screen Showcase</string>
+    <string name="mode_interactive">Interactive App</string>
+    <string name="nav_notification">Lock &amp; Alert</string>
+    <string name="nav_home">Prayers</string>
+    <string name="nav_analytics">Analytics</string>
+    <string name="nav_architecture">Architecture</string>
+    <string name="gps_active">GPS Active • MWL</string>
+    <string name="select_city">Select City</string>
+    <string name="next_prayer_label">CURRENT / NEXT PRAYER</string>
+    <string name="jamaah_countdown_format">%1$d min until Jama\'ah</string>
+    <string name="snoozed_badge_format">Snoozed +%1$dm • Jama\'ah in %2$dm</string>
+    <string name="mark_as_prayed">Mark as Prayed</string>
+    <string name="marked_prayed">Completed ✓</string>
+    <string name="snooze_5m">Snooze 5m</string>
+    <string name="send_system_notification">Test Android System Banner (Soft Chime)</string>
+    <string name="daily_prayers_title">5 Daily Fardh Prayers</string>
+    <string name="start_time_column">Adhan</string>
+    <string name="jamaah_time_column">Jama\'ah</string>
+    <string name="status_column">Done</string>
+    <string name="edit_jamaah_title">Adjust Jama\'ah Time</string>
+    <string name="edit_jamaah_desc">Set mosque congregation offset (minutes after Adhan) for %1$s</string>
+    <string name="save_action">Save</string>
+    <string name="cancel_action">Cancel</string>
+    <string name="todays_goals_title">Today\'s Spiritual Goals</string>
+    <string name="weekly_grid_title">Consistency Grid (Last 7 Weeks)</string>
+    <string name="athkaar_section_title">Daily Athkaar &amp; Bedtime Tracker</string>
+    <string name="streak_days_label">Day Streak</string>
+    <string name="jamaah_rate_label">Jama\'ah Rate</string>
+    <string name="ontime_score_label">Consistency</string>
+    <string name="bedtime_logged_format">Bedtime logged at %1$s</string>
+    <string name="bedtime_not_logged">Complete Bedtime Athkaar to log sleep time</string>
+    <string name="calculation_convention_badge">MWL (18°/17°) • -15m Jama\'ah • 20m Nag</string>
+    <string name="alert_profile_badge">Alert: Soft Chime • Exact Alarm + FGS Loop</string>
+</resources>
