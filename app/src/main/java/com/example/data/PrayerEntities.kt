@@ -39,8 +39,9 @@ data class PrayerRecordEntity(
 
 /**
  * Room Entity for UserPreferences (`user_preferences`):
- * Stores manual city configs, GPS coordinates, calculation convention, X=15m pre-Jama'ah buffer,
- * Y=20m nagging interval, and auto-Qada rollover preference.
+ * Stores manual city configs, GPS coordinates, calculation convention,
+ * post-Jama'ah repeat notification interval (default 15m, configurable 10-15m+),
+ * urgent end-of-window warning threshold (default 30m), and first-launch timestamp.
  */
 @Entity(tableName = "user_preferences")
 data class UserPreferencesEntity(
@@ -51,9 +52,12 @@ data class UserPreferencesEntity(
     @ColumnInfo(name = "last_longitude") val lastLongitude: Double = 39.8262,
     @ColumnInfo(name = "timezone_offset_hours") val timeZoneOffsetHours: Double = 3.0,
     @ColumnInfo(name = "calculation_method") val calculationMethod: String = "MWL",
-    @ColumnInfo(name = "pre_jamaah_alert_minutes") val preJamaahAlertMinutes: Int = 15, // X = 15m before Jama'ah
-    @ColumnInfo(name = "nag_interval_minutes") val nagIntervalMinutes: Int = 20,         // Y = 20m nagging loop
-    @ColumnInfo(name = "auto_qada_on_next_prayer") val autoQadaOnNextPrayer: Boolean = true
+    @ColumnInfo(name = "pre_adhan_alert_minutes") val preAdhanAlertMinutes: Int = 5,
+    @ColumnInfo(name = "pre_jamaah_alert_minutes") val preJamaahAlertMinutes: Int = 15,
+    @ColumnInfo(name = "nag_interval_minutes") val nagIntervalMinutes: Int = 10, // Configurable periodic repeat interval (default 10m) after +10m post-Jama'ah
+    @ColumnInfo(name = "urgent_end_window_minutes") val urgentEndWindowMinutes: Int = 30, // Z mins remaining urgent threshold
+    @ColumnInfo(name = "auto_qada_on_next_prayer") val autoQadaOnNextPrayer: Boolean = true,
+    @ColumnInfo(name = "first_launch_epoch_ms") val firstLaunchEpochMs: Long = 0L
 )
 
 /**
@@ -70,10 +74,20 @@ data class LocalCityEntity(
     @ColumnInfo(name = "timezone_offset_hours") val timeZoneOffsetHours: Double
 )
 
+/**
+ * Stores independent Adhan and Jama'ah time configurations per prayer (FAJR, DHUHR, JUMUAH, ASR, MAGHRIB, ISHA).
+ * Both Adhan and Jama'ah support either an offset (from PST for Adhan; from Adhan for Jama'ah)
+ * or a specific clock time (minutes from 00:00).
+ */
 @Entity(tableName = "prayer_settings")
 data class PrayerSettingEntity(
-    @PrimaryKey val prayerId: String, // FAJR, DHUHR, ASR, MAGHRIB, ISHA
-    val jamaahOffsetMinutes: Int // Minutes after Adhan for Jama'ah
+    @PrimaryKey val prayerId: String, // FAJR, DHUHR, JUMUAH, ASR, MAGHRIB, ISHA
+    @ColumnInfo(name = "adhan_offset_minutes") val adhanOffsetMinutes: Int = 0, // Minutes after PST for Adhan
+    @ColumnInfo(name = "use_fixed_adhan_time") val useFixedAdhanTime: Boolean = false,
+    @ColumnInfo(name = "fixed_adhan_time_minutes") val fixedAdhanTimeMinutes: Int = 780, // e.g. 01:00 PM
+    val jamaahOffsetMinutes: Int = 15, // Minutes after Adhan for Jama'ah
+    @ColumnInfo(name = "use_fixed_time") val useFixedTime: Boolean = false,
+    @ColumnInfo(name = "fixed_time_minutes") val fixedTimeMinutes: Int = 795 // e.g. 01:15 PM
 )
 
 @Entity(tableName = "athkaar_logs", primaryKeys = ["dateIso", "athkaarId"])
@@ -86,21 +100,59 @@ data class AthkaarLogEntity(
     val completedTimeFormatted: String? = null
 )
 
+/**
+ * Three-Tier Prayer UI Model:
+ * 1. pstMinutes: Natural solar event Prayer Start Time (PST)
+ * 2. adhanMinutes: Mosque Adhan time (either fixed clock time or PST + adhanOffsetMinutes)
+ * 3. jamaahMinutes: Mosque Jama'ah time (either fixed clock time or Adhan + jamaahOffsetMinutes)
+ */
 data class PrayerItemUiModel(
     val id: String,
     val nameEnglish: String,
     val nameArabic: String,
-    val adhanMinutes: Int,
-    val jamaahOffsetMinutes: Int,
-    val isPrayed: Boolean,
-    val isCurrent: Boolean,
-    val isNext: Boolean,
+    val pstMinutes: Int,
+    val adhanOffsetMinutes: Int = 0,
+    val useFixedAdhanTime: Boolean = false,
+    val fixedAdhanTimeMinutes: Int = pstMinutes,
+    val jamaahOffsetMinutes: Int = 15,
+    val useFixedTime: Boolean = false,
+    val fixedTimeMinutes: Int = 795,
+    val isPrayed: Boolean = false,
+    val canMarkPrayed: Boolean = false,
+    val isCurrent: Boolean = false,
+    val isNext: Boolean = false,
     val completionStatus: PrayerCompletionStatus = if (isPrayed) PrayerCompletionStatus.PRAYED_ON_TIME else PrayerCompletionStatus.PENDING,
-    val nagCountTriggered: Int = 0
+    val nagCountTriggered: Int = 0,
+    val settingsKey: String = id,
+    val isJumuah: Boolean = false,
+    val endMinutes: Int = 0,
+    val displayEndMinutes: Int = endMinutes
 ) {
-    val jamaahMinutes: Int get() = adhanMinutes + jamaahOffsetMinutes
-    val preJamaahTriggerMinutes: Int get() = (jamaahMinutes - 15).coerceAtLeast(adhanMinutes)
+    val adhanMinutes: Int
+        get() = if (useFixedAdhanTime) {
+            fixedAdhanTimeMinutes
+        } else {
+            (pstMinutes + adhanOffsetMinutes).coerceAtLeast(pstMinutes)
+        }
+
+    val jamaahMinutes: Int
+        get() = if (useFixedTime) {
+            fixedTimeMinutes.coerceAtLeast(adhanMinutes)
+        } else {
+            (adhanMinutes + jamaahOffsetMinutes).coerceAtLeast(adhanMinutes)
+        }
+
+    val preJamaahTriggerMinutes: Int
+        get() = (jamaahMinutes - 15).coerceAtLeast(adhanMinutes)
 }
+
+data class SolarWarningItemUiModel(
+    val id: String,
+    val title: String,
+    val startMinutes: Int,
+    val endMinutes: Int,
+    val isActiveNow: Boolean = false
+)
 
 data class AthkaarHabitUiModel(
     val id: String,

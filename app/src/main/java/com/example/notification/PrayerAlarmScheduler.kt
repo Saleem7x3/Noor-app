@@ -7,20 +7,27 @@ import android.content.Intent
 import android.os.Build
 
 enum class AlarmTriggerType {
-    TRIGGER_1_ADHAN_START,
-    TRIGGER_2_PRE_JAMAAH_15M,
-    TRIGGER_3_NAGGING_LOOP_20M
+    STAGE_1_PST_START,
+    STAGE_PRE_ADHAN,
+    STAGE_2_ADHAN_COUNTDOWN,
+    STAGE_PRE_JAMAAH,
+    STAGE_3_POST_JAMAAH_NAG,
+    STAGE_4_URGENT_END_OF_WINDOW
 }
 
 /**
  * Schedules exact wake-up alarms bypassing Doze mode via AlarmManager.setExactAndAllowWhileIdle():
- * - Trigger 1: Fired at exact Adhan start time
- * - Trigger 2: Fired X=15 minutes before user-adjusted Jama'ah time
- * - Trigger 3: Repeating nagging loop every Y=20 minutes if prayer is not marked as Prayed
+ * -STAGE_1_PST_START: Fired at natural Prayer Start Time (PST)
+ * -STAGE_PRE_ADHAN: Fired X mins before Mosque Adhan (default 5m)
+ * -STAGE_2_ADHAN_COUNTDOWN: Fired at Mosque Adhan Time ("Jama'ah in X mins")
+ * -STAGE_PRE_JAMAAH: Fired X mins before Jama'ah (default 15m, unlocks Snooze)
+ * -STAGE_3_POST_JAMAAH_NAG: Starts 10m after Jama'ah if unticked, then repeats every N mins (default 10m)
+ * -STAGE_4_URGENT_END_OF_WINDOW: Urgent warning when close to next prayer ("Z mins remaining until prayer time ends")
  */
 class ExactPrayerAlarmScheduler(private val context: Context) {
 
-    private val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+    val appContext: Context = context.applicationContext
+    private val alarmManager = appContext.getSystemService(Context.ALARM_SERVICE) as AlarmManager
 
     fun scheduleExactTrigger(
         prayerId: String,
@@ -28,26 +35,36 @@ class ExactPrayerAlarmScheduler(private val context: Context) {
         dateIso: String,
         triggerType: AlarmTriggerType,
         triggerAtEpochMillis: Long,
+        pstTimeFormatted: String = "",
         adhanTimeFormatted: String,
         jamaahTimeFormatted: String,
-        minutesUntilJamaah: Int,
+        pstEpochMillis: Long = 0L,
+        adhanEpochMillis: Long = 0L,
+        jamaahEpochMillis: Long = 0L,
+        windowEndEpochMillis: Long = 0L,
+        minutesUntilJamaah: Int = 0,
         nagIteration: Int = 0
     ) {
-        val intent = Intent(context, PrayerAlarmReceiver::class.java).apply {
+        val intent = Intent(appContext, PrayerAlarmReceiver::class.java).apply {
             action = ACTION_PRAYER_ALARM_TRIGGER
             putExtra(EXTRA_PRAYER_ID, prayerId)
             putExtra(EXTRA_PRAYER_NAME, prayerName)
             putExtra(EXTRA_DATE_ISO, dateIso)
             putExtra(EXTRA_TRIGGER_TYPE, triggerType.name)
+            putExtra(EXTRA_PST_TIME, pstTimeFormatted)
             putExtra(EXTRA_ADHAN_TIME, adhanTimeFormatted)
             putExtra(EXTRA_JAMAAH_TIME, jamaahTimeFormatted)
+            putExtra(EXTRA_PST_EPOCH_MS, pstEpochMillis)
+            putExtra(EXTRA_ADHAN_EPOCH_MS, adhanEpochMillis)
+            putExtra(EXTRA_JAMAAH_EPOCH_MS, jamaahEpochMillis)
+            putExtra(EXTRA_WINDOW_END_EPOCH_MS, windowEndEpochMillis)
             putExtra(EXTRA_MIN_UNTIL_JAMAAH, minutesUntilJamaah)
             putExtra(EXTRA_NAG_ITERATION, nagIteration)
         }
 
         val requestCode = (prayerId.hashCode() * 31) + triggerType.ordinal
         val pendingIntent = PendingIntent.getBroadcast(
-            context,
+            appContext,
             requestCode,
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
@@ -79,11 +96,11 @@ class ExactPrayerAlarmScheduler(private val context: Context) {
     fun cancelAllAlarmsForPrayer(prayerId: String) {
         AlarmTriggerType.entries.forEach { triggerType ->
             val requestCode = (prayerId.hashCode() * 31) + triggerType.ordinal
-            val intent = Intent(context, PrayerAlarmReceiver::class.java).apply {
+            val intent = Intent(appContext, PrayerAlarmReceiver::class.java).apply {
                 action = ACTION_PRAYER_ALARM_TRIGGER
             }
             val pendingIntent = PendingIntent.getBroadcast(
-                context,
+                appContext,
                 requestCode,
                 intent,
                 PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
@@ -92,6 +109,12 @@ class ExactPrayerAlarmScheduler(private val context: Context) {
                 alarmManager.cancel(pendingIntent)
                 pendingIntent.cancel()
             }
+        }
+    }
+
+    fun cancelAllDailyPrayerAlarms() {
+        listOf("FAJR", "DHUHR", "ASR", "MAGHRIB", "ISHA").forEach { id ->
+            cancelAllAlarmsForPrayer(id)
         }
     }
 
@@ -105,9 +128,17 @@ class ExactPrayerAlarmScheduler(private val context: Context) {
         const val EXTRA_PRAYER_NAME = "extra_prayer_name"
         const val EXTRA_DATE_ISO = "extra_date_iso"
         const val EXTRA_TRIGGER_TYPE = "extra_trigger_type"
+        const val EXTRA_PST_TIME = "extra_pst_time"
         const val EXTRA_ADHAN_TIME = "extra_adhan_time"
         const val EXTRA_JAMAAH_TIME = "extra_jamaah_time"
+        const val EXTRA_PST_EPOCH_MS = "extra_pst_epoch_ms"
+        const val EXTRA_ADHAN_EPOCH_MS = "extra_adhan_epoch_ms"
+        const val EXTRA_JAMAAH_EPOCH_MS = "extra_jamaah_epoch_ms"
+        const val EXTRA_WINDOW_END_EPOCH_MS = "extra_window_end_epoch_ms"
         const val EXTRA_MIN_UNTIL_JAMAAH = "extra_min_until_jamaah"
+        const val EXTRA_MIN_PASSED_SINCE_JAMAAH = "extra_min_passed_since_jamaah"
+        const val EXTRA_MIN_REMAINING_UNTIL_END = "extra_min_remaining_until_end"
+        const val EXTRA_NAG_INTERVAL_MIN = "extra_nag_interval_min"
         const val EXTRA_NAG_ITERATION = "extra_nag_iteration"
     }
 }

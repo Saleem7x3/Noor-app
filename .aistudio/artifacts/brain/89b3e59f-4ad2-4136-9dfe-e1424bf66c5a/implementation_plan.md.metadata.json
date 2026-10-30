@@ -1,6 +1,6 @@
 {
-  "summary":  "Comprehensive Senior Android Technical Architecture Blueprint and Implementation Plan for Noor: Islamic Prayer Reminder & Habit Tracker, detailing Clean Architecture (Data, Domain, Presentation), Room Database Schema (PrayerLog, UserPreferences, CityCoordinateEntity), Exact Alarm & Foreground Service Nagging Loop (15m pre-Jama'ah, 20m nagging, auto-Qada transition), FusedLocationProviderClient + SQLite fallback, DataStore state tracking, and reactive Jetpack Compose StateFlow design.",
-  "updatedAt":  "2026-10-29T15:32:59.823354381Z",
+  "summary":  "Implementation plan for larger Hero Card with clean 'CURRENT PRAYER' header, Day & Date left pill + GPS inside Location pill, improved Fajr-to-Isha rows with time-of-day icons and start-to-end ranges, interleaved Sun Rising / Top of Head Sun / Sun Setting rows, and synchronized Snooze & Notification elapsed-time calculation.",
+  "updatedAt":  "2026-10-30T11:40:37.240076734Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

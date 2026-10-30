@@ -30,12 +30,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Analytics
-import androidx.compose.material.icons.filled.Architecture
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Mosque
 import androidx.compose.material.icons.filled.NotificationsActive
-import androidx.compose.material.icons.filled.PhoneAndroid
-import androidx.compose.material.icons.filled.ViewCarousel
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -55,7 +53,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.data.AthkaarHabitUiModel
 import com.example.data.PrayerItemUiModel
@@ -81,17 +81,23 @@ fun NoorPrayerAppRoot(
     onSetDisplayMode: (AppDisplayMode) -> Unit,
     onSelectTab: (ActiveTab) -> Unit,
     onSelectCity: (CityLocation) -> Unit,
+    onSearchLocationQueryChanged: (String) -> Unit,
+    onAddCustomLocation: (String, String, Double, Double) -> Unit,
     onRequestGpsLocation: () -> Unit,
     onMarkFeaturedAsPrayed: () -> Unit,
     onSnoozeFeaturedFiveMin: () -> Unit,
     onSimulateQadaRollover: () -> Unit,
     onTogglePrayerCompleted: (PrayerItemUiModel) -> Unit,
     onEditJamaahClicked: (PrayerItemUiModel) -> Unit,
-    onSaveJamaahOffset: (String, Int) -> Unit,
+    onEditAdhanClicked: (PrayerItemUiModel) -> Unit = onEditJamaahClicked,
+    onSaveJamaahOffset: (String, Int, Boolean, Int) -> Unit,
+    onSavePrayerTimeSettings: (String, Int, Boolean, Int, Int, Boolean, Int) -> Unit = { _, _, _, _, _, _, _ -> },
     onDismissJamaahDialog: () -> Unit,
     onStepAthkaar: (AthkaarHabitUiModel) -> Unit,
     onToggleAthkaarComplete: (AthkaarHabitUiModel) -> Unit,
-    onBannerMessage: (String) -> Unit
+    onBannerMessage: (String) -> Unit,
+    onToggleCountdownMode: () -> Unit = {},
+    onUpdateRepeatInterval: (Int, Int, Int, Int) -> Unit = { _, _, _, _ -> }
 ) {
     BackHandler(
         enabled = uiState.displayMode == AppDisplayMode.INTERACTIVE_SINGLE_SCREEN ||
@@ -129,7 +135,15 @@ fun NoorPrayerAppRoot(
                                 contentDescription = stringResource(R.string.nav_notification)
                             )
                         },
-                        label = { Text(stringResource(R.string.nav_notification)) },
+                        label = {
+                            Text(
+                                text = stringResource(R.string.nav_notification),
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis,
+                                fontSize = 11.sp
+                            )
+                        },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = OnGoldDark,
                             selectedTextColor = ElegantGold,
@@ -149,7 +163,15 @@ fun NoorPrayerAppRoot(
                                 contentDescription = stringResource(R.string.nav_home)
                             )
                         },
-                        label = { Text(stringResource(R.string.nav_home)) },
+                        label = {
+                            Text(
+                                text = stringResource(R.string.nav_home),
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis,
+                                fontSize = 11.sp
+                            )
+                        },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = OnGoldDark,
                             selectedTextColor = ElegantGold,
@@ -169,7 +191,15 @@ fun NoorPrayerAppRoot(
                                 contentDescription = stringResource(R.string.nav_analytics)
                             )
                         },
-                        label = { Text(stringResource(R.string.nav_analytics)) },
+                        label = {
+                            Text(
+                                text = stringResource(R.string.nav_analytics),
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis,
+                                fontSize = 11.sp
+                            )
+                        },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = OnGoldDark,
                             selectedTextColor = ElegantGold,
@@ -185,11 +215,19 @@ fun NoorPrayerAppRoot(
                         onClick = { onSelectTab(ActiveTab.ARCHITECTURE_BLUEPRINT) },
                         icon = {
                             Icon(
-                                imageVector = Icons.Filled.Architecture,
+                                imageVector = Icons.Filled.Settings,
                                 contentDescription = stringResource(R.string.nav_architecture)
                             )
                         },
-                        label = { Text(stringResource(R.string.nav_architecture)) },
+                        label = {
+                            Text(
+                                text = stringResource(R.string.nav_architecture),
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis,
+                                fontSize = 11.sp
+                            )
+                        },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = OnGoldDark,
                             selectedTextColor = ElegantGold,
@@ -265,17 +303,23 @@ fun NoorPrayerAppRoot(
                         onSetDisplayMode(AppDisplayMode.INTERACTIVE_SINGLE_SCREEN)
                     },
                     onSelectCity = onSelectCity,
+                    onSearchLocationQueryChanged = onSearchLocationQueryChanged,
+                    onAddCustomLocation = onAddCustomLocation,
                     onRequestGpsLocation = onRequestGpsLocation,
                     onMarkFeaturedAsPrayed = onMarkFeaturedAsPrayed,
                     onSnoozeFeaturedFiveMin = onSnoozeFeaturedFiveMin,
                     onSimulateQadaRollover = onSimulateQadaRollover,
                     onTogglePrayerCompleted = onTogglePrayerCompleted,
                     onEditJamaahClicked = onEditJamaahClicked,
+                    onEditAdhanClicked = onEditAdhanClicked,
                     onSaveJamaahOffset = onSaveJamaahOffset,
+                    onSavePrayerTimeSettings = onSavePrayerTimeSettings,
                     onDismissJamaahDialog = onDismissJamaahDialog,
                     onStepAthkaar = onStepAthkaar,
                     onToggleAthkaarComplete = onToggleAthkaarComplete,
-                    onBannerMessage = onBannerMessage
+                    onBannerMessage = onBannerMessage,
+                    onToggleCountdownMode = onToggleCountdownMode,
+                    onUpdateRepeatInterval = onUpdateRepeatInterval
                 )
             } else {
                 val verticalScroll = rememberScrollState()
@@ -295,6 +339,8 @@ fun NoorPrayerAppRoot(
                                     onMarkAsPrayed = onMarkFeaturedAsPrayed,
                                     onSnoozeFiveMinutes = onSnoozeFeaturedFiveMin,
                                     onNotificationTriggered = onBannerMessage,
+                                    onToggleCountdownMode = onToggleCountdownMode,
+                                    onUpdateRepeatInterval = onUpdateRepeatInterval,
                                     isCompactShowcase = false
                                 )
                             }
@@ -303,11 +349,16 @@ fun NoorPrayerAppRoot(
                                 PrayerHomeScreenContent(
                                     uiState = uiState,
                                     onSelectCity = onSelectCity,
+                                    onSearchLocationQueryChanged = onSearchLocationQueryChanged,
+                                    onAddCustomLocation = onAddCustomLocation,
                                     onRequestGpsLocation = onRequestGpsLocation,
                                     onTogglePrayerCompleted = onTogglePrayerCompleted,
                                     onEditJamaahClicked = onEditJamaahClicked,
+                                    onEditAdhanClicked = onEditAdhanClicked,
                                     onSaveJamaahOffset = onSaveJamaahOffset,
+                                    onSavePrayerTimeSettings = onSavePrayerTimeSettings,
                                     onDismissJamaahDialog = onDismissJamaahDialog,
+                                    onToggleCountdownMode = onToggleCountdownMode,
                                     isCompactShowcase = false
                                 )
                             }
@@ -328,7 +379,8 @@ fun NoorPrayerAppRoot(
                                     uiState = uiState,
                                     onRequestGpsLocation = onRequestGpsLocation,
                                     onSimulateQadaRollover = onSimulateQadaRollover,
-                                    onMarkFeaturedAsPrayed = onMarkFeaturedAsPrayed
+                                    onMarkFeaturedAsPrayed = onMarkFeaturedAsPrayed,
+                                    onUpdateNotificationSettings = onUpdateRepeatInterval
                                 )
                             }
                         }
@@ -352,12 +404,11 @@ private fun TopBrandPresentationHeader(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(horizontal = 16.dp, vertical = 10.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(
-                modifier = Modifier.weight(1f),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
@@ -391,43 +442,6 @@ private fun TopBrandPresentationHeader(
                     )
                 }
             }
-
-            // Compact single-line toggle chip on the top right
-            val isShowcase = displayMode == AppDisplayMode.SHOWCASE_3_SCREENS
-            Surface(
-                color = if (isShowcase) ElegantGold else ElevatedSlateSurface,
-                shape = RoundedCornerShape(50),
-                border = BorderStroke(1.dp, if (isShowcase) ElegantGold else SlateStrokeBorder),
-                modifier = Modifier
-                    .clip(RoundedCornerShape(50))
-                    .clickable {
-                        onSetDisplayMode(
-                            if (isShowcase) AppDisplayMode.INTERACTIVE_SINGLE_SCREEN
-                            else AppDisplayMode.SHOWCASE_3_SCREENS
-                        )
-                    }
-                    .testTag(if (isShowcase) "mode_interactive_button" else "mode_showcase_button")
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(5.dp)
-                ) {
-                    Icon(
-                        imageVector = if (isShowcase) Icons.Filled.PhoneAndroid else Icons.Filled.ViewCarousel,
-                        contentDescription = null,
-                        tint = if (isShowcase) OnGoldDark else ElegantGold,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Text(
-                        text = if (isShowcase) "App View" else "3-Screen View",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (isShowcase) OnGoldDark else CrispOffWhite,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1
-                    )
-                }
-            }
         }
     }
 }
@@ -437,17 +451,23 @@ private fun ThreeScreenShowcaseDeck(
     uiState: PrayerDashboardUiState,
     onOpenScreenFull: (ActiveTab) -> Unit,
     onSelectCity: (CityLocation) -> Unit,
+    onSearchLocationQueryChanged: (String) -> Unit,
+    onAddCustomLocation: (String, String, Double, Double) -> Unit,
     onRequestGpsLocation: () -> Unit,
     onMarkFeaturedAsPrayed: () -> Unit,
     onSnoozeFeaturedFiveMin: () -> Unit,
     onSimulateQadaRollover: () -> Unit,
     onTogglePrayerCompleted: (PrayerItemUiModel) -> Unit,
     onEditJamaahClicked: (PrayerItemUiModel) -> Unit,
-    onSaveJamaahOffset: (String, Int) -> Unit,
+    onEditAdhanClicked: (PrayerItemUiModel) -> Unit = onEditJamaahClicked,
+    onSaveJamaahOffset: (String, Int, Boolean, Int) -> Unit,
+    onSavePrayerTimeSettings: (String, Int, Boolean, Int, Int, Boolean, Int) -> Unit = { _, _, _, _, _, _, _ -> },
     onDismissJamaahDialog: () -> Unit,
     onStepAthkaar: (AthkaarHabitUiModel) -> Unit,
     onToggleAthkaarComplete: (AthkaarHabitUiModel) -> Unit,
-    onBannerMessage: (String) -> Unit
+    onBannerMessage: (String) -> Unit,
+    onToggleCountdownMode: () -> Unit = {},
+    onUpdateRepeatInterval: (Int, Int, Int, Int) -> Unit = { _, _, _, _ -> }
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val isWidePresentation = maxWidth >= 860.dp
@@ -477,6 +497,8 @@ private fun ThreeScreenShowcaseDeck(
                             onMarkAsPrayed = onMarkFeaturedAsPrayed,
                             onSnoozeFiveMinutes = onSnoozeFeaturedFiveMin,
                             onNotificationTriggered = onBannerMessage,
+                            onToggleCountdownMode = onToggleCountdownMode,
+                            onUpdateRepeatInterval = onUpdateRepeatInterval,
                             isCompactShowcase = true
                         )
                     }
@@ -491,11 +513,16 @@ private fun ThreeScreenShowcaseDeck(
                         PrayerHomeScreenContent(
                             uiState = uiState,
                             onSelectCity = onSelectCity,
+                            onSearchLocationQueryChanged = onSearchLocationQueryChanged,
+                            onAddCustomLocation = onAddCustomLocation,
                             onRequestGpsLocation = onRequestGpsLocation,
                             onTogglePrayerCompleted = onTogglePrayerCompleted,
                             onEditJamaahClicked = onEditJamaahClicked,
+                            onEditAdhanClicked = onEditAdhanClicked,
                             onSaveJamaahOffset = onSaveJamaahOffset,
+                            onSavePrayerTimeSettings = onSavePrayerTimeSettings,
                             onDismissJamaahDialog = onDismissJamaahDialog,
+                            onToggleCountdownMode = onToggleCountdownMode,
                             isCompactShowcase = true
                         )
                     }
@@ -526,7 +553,8 @@ private fun ThreeScreenShowcaseDeck(
                         uiState = uiState,
                         onRequestGpsLocation = onRequestGpsLocation,
                         onSimulateQadaRollover = onSimulateQadaRollover,
-                        onMarkFeaturedAsPrayed = onMarkFeaturedAsPrayed
+                        onMarkFeaturedAsPrayed = onMarkFeaturedAsPrayed,
+                        onUpdateNotificationSettings = onUpdateRepeatInterval
                     )
                 }
             }
@@ -581,6 +609,8 @@ private fun ThreeScreenShowcaseDeck(
                         onMarkAsPrayed = onMarkFeaturedAsPrayed,
                         onSnoozeFiveMinutes = onSnoozeFeaturedFiveMin,
                         onNotificationTriggered = onBannerMessage,
+                        onToggleCountdownMode = onToggleCountdownMode,
+                        onUpdateRepeatInterval = onUpdateRepeatInterval,
                         isCompactShowcase = true
                     )
                 }
@@ -595,11 +625,16 @@ private fun ThreeScreenShowcaseDeck(
                     PrayerHomeScreenContent(
                         uiState = uiState,
                         onSelectCity = onSelectCity,
+                        onSearchLocationQueryChanged = onSearchLocationQueryChanged,
+                        onAddCustomLocation = onAddCustomLocation,
                         onRequestGpsLocation = onRequestGpsLocation,
                         onTogglePrayerCompleted = onTogglePrayerCompleted,
                         onEditJamaahClicked = onEditJamaahClicked,
+                        onEditAdhanClicked = onEditAdhanClicked,
                         onSaveJamaahOffset = onSaveJamaahOffset,
+                        onSavePrayerTimeSettings = onSavePrayerTimeSettings,
                         onDismissJamaahDialog = onDismissJamaahDialog,
+                        onToggleCountdownMode = onToggleCountdownMode,
                         isCompactShowcase = true
                     )
                 }
@@ -628,7 +663,8 @@ private fun ThreeScreenShowcaseDeck(
                         uiState = uiState,
                         onRequestGpsLocation = onRequestGpsLocation,
                         onSimulateQadaRollover = onSimulateQadaRollover,
-                        onMarkFeaturedAsPrayed = onMarkFeaturedAsPrayed
+                        onMarkFeaturedAsPrayed = onMarkFeaturedAsPrayed,
+                        onUpdateNotificationSettings = onUpdateRepeatInterval
                     )
                 }
 

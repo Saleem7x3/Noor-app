@@ -23,25 +23,31 @@ class PrayerRepository(private val prayerDao: PrayerDao) {
         prayerDao.getAthkaarForDate(dateIso)
 
     suspend fun ensureInitialized(todayIso: String) {
-        // 1. Seed local SQLite fallback city database if empty
-        val existingCities = prayerDao.getLocalCitiesSync()
-        if (existingCities.isEmpty()) {
-            val sqlCities = PrayerTimeCalculator.PredefinedCities.map { city ->
-                LocalCityEntity(
-                    cityId = city.id,
-                    cityName = city.name,
-                    countryName = city.country,
-                    latitude = city.latitude,
-                    longitude = city.longitude,
-                    timeZoneOffsetHours = city.timeZoneOffsetHours
-                )
-            }
-            prayerDao.insertLocalCities(sqlCities)
-        }
+        // 1. Remove legacy top-pinned neighborhood entries and upsert the alphabetical world city catalog
+        val legacyIds = listOf(
+            "bapujinagar_blr", "frazer_town_blr", "shivajinagar_blr",
+            "jayanagar_blr", "whitefield_blr", "bhatkal", "hubballi",
+            "kalaburagi", "belagavi", "tumakuru", "shivamogga", "davangere"
+        )
+        prayerDao.deleteLocalCitiesByIds(legacyIds)
 
-        // 2. Seed UserPreferencesEntity with confirmed X=15m pre-Jama'ah and Y=20m nagging interval
-        if (prayerDao.getUserPreferencesSync() == null) {
-            val defaultCity = PrayerTimeCalculator.PredefinedCities.first()
+        val sqlCities = PrayerTimeCalculator.PredefinedCities.map { city ->
+            LocalCityEntity(
+                cityId = city.id,
+                cityName = city.name,
+                countryName = city.country,
+                latitude = city.latitude,
+                longitude = city.longitude,
+                timeZoneOffsetHours = city.timeZoneOffsetHours
+            )
+        }
+        prayerDao.insertLocalCities(sqlCities)
+
+        // 2. Seed UserPreferencesEntity with timezone-detected default city, X=15m, Y=20m buffers, and firstLaunchEpochMs
+        val nowEpochMs = System.currentTimeMillis()
+        val currentPrefs = prayerDao.getUserPreferencesSync()
+        if (currentPrefs == null || currentPrefs.selectedCityId in legacyIds) {
+            val defaultCity = PrayerTimeCalculator.detectBestDefaultCityForDeviceTimeZone()
             prayerDao.upsertUserPreferences(
                 UserPreferencesEntity(
                     id = 1,
@@ -51,85 +57,120 @@ class PrayerRepository(private val prayerDao: PrayerDao) {
                     lastLongitude = defaultCity.longitude,
                     timeZoneOffsetHours = defaultCity.timeZoneOffsetHours,
                     calculationMethod = "MWL",
+                    preAdhanAlertMinutes = 5,
                     preJamaahAlertMinutes = 15,
-                    nagIntervalMinutes = 20,
-                    autoQadaOnNextPrayer = true
+                    nagIntervalMinutes = 10,
+                    urgentEndWindowMinutes = 30,
+                    autoQadaOnNextPrayer = true,
+                    firstLaunchEpochMs = nowEpochMs
                 )
+            )
+        } else if (currentPrefs.firstLaunchEpochMs <= 0L) {
+            prayerDao.upsertUserPreferences(
+                currentPrefs.copy(firstLaunchEpochMs = nowEpochMs)
             )
         }
 
-        // 3. Default Jama'ah congregation offsets (minutes after Adhan)
+        // 3. Default Mosque Adhan & Jama'ah configurations (Fajr 5:00 AM, Dhuhr/Jumu'ah 1:00 PM, Asr 4:30 PM, Maghrib = PST, Isha 8:15 PM)
         val defaultOffsets = listOf(
-            PrayerSettingEntity("FAJR", 20),
-            PrayerSettingEntity("DHUHR", 15),
-            PrayerSettingEntity("ASR", 15),
-            PrayerSettingEntity("MAGHRIB", 10),
-            PrayerSettingEntity("ISHA", 15)
+            PrayerSettingEntity(
+                prayerId = "FAJR",
+                adhanOffsetMinutes = 0,
+                useFixedAdhanTime = true,
+                fixedAdhanTimeMinutes = 5 * 60, // 05:00 AM
+                jamaahOffsetMinutes = 20,
+                useFixedTime = false,
+                fixedTimeMinutes = 5 * 60 + 20 // 05:20 AM
+            ),
+            PrayerSettingEntity(
+                prayerId = "DHUHR",
+                adhanOffsetMinutes = 0,
+                useFixedAdhanTime = true,
+                fixedAdhanTimeMinutes = 13 * 60, // 01:00 PM
+                jamaahOffsetMinutes = 30,
+                useFixedTime = false,
+                fixedTimeMinutes = 13 * 60 + 30 // 01:30 PM
+            ),
+            PrayerSettingEntity(
+                prayerId = "JUMUAH",
+                adhanOffsetMinutes = 0,
+                useFixedAdhanTime = true,
+                fixedAdhanTimeMinutes = 13 * 60, // 01:00 PM
+                jamaahOffsetMinutes = 30,
+                useFixedTime = false,
+                fixedTimeMinutes = 13 * 60 + 30 // 01:30 PM
+            ),
+            PrayerSettingEntity(
+                prayerId = "ASR",
+                adhanOffsetMinutes = 0,
+                useFixedAdhanTime = true,
+                fixedAdhanTimeMinutes = 16 * 60 + 30, // 04:30 PM
+                jamaahOffsetMinutes = 15,
+                useFixedTime = false,
+                fixedTimeMinutes = 16 * 60 + 45 // 04:45 PM
+            ),
+            PrayerSettingEntity(
+                prayerId = "MAGHRIB",
+                adhanOffsetMinutes = 0,
+                useFixedAdhanTime = false, // Same as Prayer Start Time (PST) by default, still adjustable
+                fixedAdhanTimeMinutes = 18 * 60 + 15,
+                jamaahOffsetMinutes = 10,
+                useFixedTime = false,
+                fixedTimeMinutes = 18 * 60 + 25
+            ),
+            PrayerSettingEntity(
+                prayerId = "ISHA",
+                adhanOffsetMinutes = 0,
+                useFixedAdhanTime = true,
+                fixedAdhanTimeMinutes = 20 * 60 + 15, // 08:15 PM
+                jamaahOffsetMinutes = 15,
+                useFixedTime = false,
+                fixedTimeMinutes = 20 * 60 + 30 // 08:30 PM
+            )
         )
         prayerDao.insertDefaultPrayerSettings(defaultOffsets)
 
-        // 4. Seed realistic historical data for the 7-week contribution graph & today's initial progress
+        // 4. Seed realistic historical data for the 7-week contribution graph & today's unmarked initial sheet
         val existing = prayerDao.getAllPrayerRecords().first()
         if (existing.isEmpty()) {
             val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-            val cal = Calendar.getInstance()
+            val defaultCity = PrayerTimeCalculator.detectBestDefaultCityForDeviceTimeZone()
+            val cal = PrayerTimeCalculator.getCalendarForCity(defaultCity)
+            val nowMinutes = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
+            val todayCalc = PrayerTimeCalculator.calculateDailyPrayers(defaultCity, cal)
+
+            // Switch to the new day's Fajr-to-Isha sheet right at Islamic Midnight (end of Isha)
+            val activeSheetCal = cal.clone() as Calendar
+            if (todayCalc.islamicMidnightMinutes < 1440 && nowMinutes >= todayCalc.islamicMidnightMinutes) {
+                activeSheetCal.add(Calendar.DAY_OF_YEAR, 1)
+            } else if (todayCalc.islamicMidnightMinutes > 1440 && nowMinutes < (todayCalc.islamicMidnightMinutes - 1440)) {
+                activeSheetCal.add(Calendar.DAY_OF_YEAR, -1)
+            }
+            val activeSheetIso = sdf.format(activeSheetCal.time)
+
             val seedPrayerRecords = mutableListOf<PrayerRecordEntity>()
             val seedAthkaarLogs = mutableListOf<AthkaarLogEntity>()
 
             val prayerIds = listOf("FAJR", "DHUHR", "ASR", "MAGHRIB", "ISHA")
 
-            // Today: Fajr and Dhuhr already completed on time; Asr is the active upcoming prayer
-            seedPrayerRecords.add(
-                PrayerRecordEntity(
-                    dateIso = todayIso,
-                    prayerId = "FAJR",
-                    isPrayed = true,
-                    isInJamaah = true,
-                    completedAtMillis = System.currentTimeMillis() - 14400000L,
-                    completionStatus = PrayerCompletionStatus.PRAYED_ON_TIME.name
+            // First-time experience: all 5 prayers on the active sheet start unmarked (PENDING)
+            // so the user is the one to tick them; Qada is only marked for prayer windows that pass AFTER first launch.
+            prayerIds.forEach { pId ->
+                seedPrayerRecords.add(
+                    PrayerRecordEntity(
+                        dateIso = activeSheetIso,
+                        prayerId = pId,
+                        isPrayed = false,
+                        isInJamaah = true,
+                        completedAtMillis = 0L,
+                        completionStatus = PrayerCompletionStatus.PENDING.name
+                    )
                 )
-            )
-            seedPrayerRecords.add(
-                PrayerRecordEntity(
-                    dateIso = todayIso,
-                    prayerId = "DHUHR",
-                    isPrayed = true,
-                    isInJamaah = true,
-                    completedAtMillis = System.currentTimeMillis() - 3600000L,
-                    completionStatus = PrayerCompletionStatus.PRAYED_ON_TIME.name
-                )
-            )
-            seedPrayerRecords.add(
-                PrayerRecordEntity(
-                    dateIso = todayIso,
-                    prayerId = "ASR",
-                    isPrayed = false,
-                    isInJamaah = true,
-                    completionStatus = PrayerCompletionStatus.PENDING.name
-                )
-            )
-            seedPrayerRecords.add(
-                PrayerRecordEntity(
-                    dateIso = todayIso,
-                    prayerId = "MAGHRIB",
-                    isPrayed = false,
-                    isInJamaah = true,
-                    completionStatus = PrayerCompletionStatus.PENDING.name
-                )
-            )
-            seedPrayerRecords.add(
-                PrayerRecordEntity(
-                    dateIso = todayIso,
-                    prayerId = "ISHA",
-                    isPrayed = false,
-                    isInJamaah = true,
-                    completionStatus = PrayerCompletionStatus.PENDING.name
-                )
-            )
+            }
 
             seedAthkaarLogs.add(
                 AthkaarLogEntity(
-                    dateIso = todayIso,
+                    dateIso = activeSheetIso,
                     athkaarId = "MORNING",
                     currentCount = 33,
                     targetCount = 33,
@@ -139,7 +180,7 @@ class PrayerRepository(private val prayerDao: PrayerDao) {
             )
             seedAthkaarLogs.add(
                 AthkaarLogEntity(
-                    dateIso = todayIso,
+                    dateIso = activeSheetIso,
                     athkaarId = "EVENING",
                     currentCount = 18,
                     targetCount = 33,
@@ -149,7 +190,7 @@ class PrayerRepository(private val prayerDao: PrayerDao) {
             )
             seedAthkaarLogs.add(
                 AthkaarLogEntity(
-                    dateIso = todayIso,
+                    dateIso = activeSheetIso,
                     athkaarId = "BEDTIME",
                     currentCount = 0,
                     targetCount = 33,
@@ -160,7 +201,7 @@ class PrayerRepository(private val prayerDao: PrayerDao) {
 
             // Past 48 days for rich weekly contribution grid & streak stats
             for (daysAgo in 1..48) {
-                val dayCal = cal.clone() as Calendar
+                val dayCal = activeSheetCal.clone() as Calendar
                 dayCal.add(Calendar.DAY_OF_YEAR, -daysAgo)
                 val dateStr = sdf.format(dayCal.time)
 
@@ -213,7 +254,49 @@ class PrayerRepository(private val prayerDao: PrayerDao) {
         }
     }
 
+    suspend fun getSavedSelectedCity(): Pair<CityLocation, Boolean>? {
+        val prefs = prayerDao.getUserPreferencesSync() ?: return null
+        val savedCities = prayerDao.getLocalCitiesSync()
+        val matchedEntity = savedCities.firstOrNull { it.cityId == prefs.selectedCityId }
+        val city = if (matchedEntity != null) {
+            CityLocation(
+                id = matchedEntity.cityId,
+                name = matchedEntity.cityName,
+                country = matchedEntity.countryName,
+                latitude = matchedEntity.latitude,
+                longitude = matchedEntity.longitude,
+                timeZoneOffsetHours = matchedEntity.timeZoneOffsetHours,
+                isGpsSimulated = prefs.useGpsLocation
+            )
+        } else {
+            PrayerTimeCalculator.PredefinedCities.firstOrNull { it.id == prefs.selectedCityId }
+                ?: CityLocation(
+                    id = prefs.selectedCityId,
+                    name = prefs.selectedCityId.replaceFirstChar { it.uppercase() },
+                    country = "Saved Location",
+                    latitude = prefs.lastLatitude,
+                    longitude = prefs.lastLongitude,
+                    timeZoneOffsetHours = prefs.timeZoneOffsetHours,
+                    isGpsSimulated = prefs.useGpsLocation
+                )
+        }
+        return Pair(city, prefs.useGpsLocation)
+    }
+
     suspend fun updateSelectedLocation(city: CityLocation, isGps: Boolean) {
+        // Persist the selected town/city into local_cities so it remains available offline
+        prayerDao.insertLocalCities(
+            listOf(
+                LocalCityEntity(
+                    cityId = city.id,
+                    cityName = city.name,
+                    countryName = city.country,
+                    latitude = city.latitude,
+                    longitude = city.longitude,
+                    timeZoneOffsetHours = city.timeZoneOffsetHours
+                )
+            )
+        )
         val current = prayerDao.getUserPreferencesSync() ?: UserPreferencesEntity()
         prayerDao.upsertUserPreferences(
             current.copy(
@@ -276,11 +359,61 @@ class PrayerRepository(private val prayerDao: PrayerDao) {
         )
     }
 
-    suspend fun updateJamaahOffset(prayerId: String, offsetMinutes: Int) {
+    suspend fun updatePrayerTimeSettings(
+        prayerId: String,
+        adhanOffsetMinutes: Int,
+        useFixedAdhanTime: Boolean,
+        fixedAdhanTimeMinutes: Int,
+        jamaahOffsetMinutes: Int,
+        useFixedJamaahTime: Boolean,
+        fixedJamaahTimeMinutes: Int
+    ) {
         prayerDao.upsertPrayerSetting(
             PrayerSettingEntity(
                 prayerId = prayerId,
-                jamaahOffsetMinutes = offsetMinutes.coerceIn(0, 90)
+                adhanOffsetMinutes = adhanOffsetMinutes.coerceIn(-30, 180),
+                useFixedAdhanTime = useFixedAdhanTime,
+                fixedAdhanTimeMinutes = fixedAdhanTimeMinutes.coerceIn(0, 1439),
+                jamaahOffsetMinutes = jamaahOffsetMinutes.coerceIn(-30, 180),
+                useFixedTime = useFixedJamaahTime,
+                fixedTimeMinutes = fixedJamaahTimeMinutes.coerceIn(0, 1439)
+            )
+        )
+    }
+
+    suspend fun updateJamaahOffset(
+        prayerId: String,
+        offsetMinutes: Int,
+        useFixedTime: Boolean = false,
+        fixedTimeMinutes: Int = 795
+    ) {
+        val existing = prayerDao.getAllPrayerSettingsSync().firstOrNull { it.prayerId == prayerId }
+        prayerDao.upsertPrayerSetting(
+            PrayerSettingEntity(
+                prayerId = prayerId,
+                adhanOffsetMinutes = existing?.adhanOffsetMinutes ?: 0,
+                useFixedAdhanTime = existing?.useFixedAdhanTime ?: false,
+                fixedAdhanTimeMinutes = existing?.fixedAdhanTimeMinutes ?: 780,
+                jamaahOffsetMinutes = offsetMinutes.coerceIn(-30, 180),
+                useFixedTime = useFixedTime,
+                fixedTimeMinutes = fixedTimeMinutes.coerceIn(0, 1439)
+            )
+        )
+    }
+
+    suspend fun updateNotificationIntervals(
+        nagIntervalMinutes: Int,
+        urgentEndWindowMinutes: Int = 30,
+        preAdhanAlertMinutes: Int? = null,
+        preJamaahAlertMinutes: Int? = null
+    ) {
+        val current = prayerDao.getUserPreferencesSync() ?: UserPreferencesEntity()
+        prayerDao.upsertUserPreferences(
+            current.copy(
+                preAdhanAlertMinutes = (preAdhanAlertMinutes ?: current.preAdhanAlertMinutes).coerceIn(0, 30),
+                preJamaahAlertMinutes = (preJamaahAlertMinutes ?: current.preJamaahAlertMinutes).coerceIn(5, 45),
+                nagIntervalMinutes = nagIntervalMinutes.coerceIn(5, 60),
+                urgentEndWindowMinutes = urgentEndWindowMinutes.coerceIn(10, 60)
             )
         )
     }

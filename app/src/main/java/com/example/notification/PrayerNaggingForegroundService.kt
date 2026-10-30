@@ -11,7 +11,7 @@ import androidx.core.content.ContextCompat
 /**
  * Foreground Service maintaining the persistent notification state loop so aggressive OEM battery
  * optimizations do not terminate active prayer reminders until "Mark as Prayed" or "Dismiss" is tapped,
- * or the next prayer auto-marks the expired prayer as MISSED_QADA.
+ * or the prayer window expires.
  */
 class PrayerNaggingForegroundService : Service() {
 
@@ -27,9 +27,17 @@ class PrayerNaggingForegroundService : Service() {
         val prayerId = intent?.getStringExtra(ExactPrayerAlarmScheduler.EXTRA_PRAYER_ID) ?: "ASR"
         val prayerName = intent?.getStringExtra(ExactPrayerAlarmScheduler.EXTRA_PRAYER_NAME) ?: "Asr"
         val dateIso = intent?.getStringExtra(ExactPrayerAlarmScheduler.EXTRA_DATE_ISO) ?: ""
+        val pstTime = intent?.getStringExtra(ExactPrayerAlarmScheduler.EXTRA_PST_TIME) ?: ""
         val adhanTime = intent?.getStringExtra(ExactPrayerAlarmScheduler.EXTRA_ADHAN_TIME) ?: "03:45 PM"
         val jamaahTime = intent?.getStringExtra(ExactPrayerAlarmScheduler.EXTRA_JAMAAH_TIME) ?: "04:00 PM"
-        val minutesUntilJamaah = intent?.getIntExtra(ExactPrayerAlarmScheduler.EXTRA_MIN_UNTIL_JAMAAH, 15) ?: 15
+        val triggerName = intent?.getStringExtra(ExactPrayerAlarmScheduler.EXTRA_TRIGGER_TYPE)
+            ?: AlarmTriggerType.STAGE_3_POST_JAMAAH_NAG.name
+        val triggerType = runCatching { AlarmTriggerType.valueOf(triggerName) }
+            .getOrDefault(AlarmTriggerType.STAGE_3_POST_JAMAAH_NAG)
+        val minutesUntilJamaah = intent?.getIntExtra(ExactPrayerAlarmScheduler.EXTRA_MIN_UNTIL_JAMAAH, 0) ?: 0
+        val minutesPassed = intent?.getIntExtra(ExactPrayerAlarmScheduler.EXTRA_MIN_PASSED_SINCE_JAMAAH, 10) ?: 10
+        val minutesRemaining = intent?.getIntExtra(ExactPrayerAlarmScheduler.EXTRA_MIN_REMAINING_UNTIL_END, 30) ?: 30
+        val repeatIntervalMin = intent?.getIntExtra(ExactPrayerAlarmScheduler.EXTRA_NAG_INTERVAL_MIN, 15) ?: 15
         val nagIteration = intent?.getIntExtra(ExactPrayerAlarmScheduler.EXTRA_NAG_ITERATION, 1) ?: 1
 
         PrayerNotificationHelper.ensureChannel(this)
@@ -38,10 +46,15 @@ class PrayerNaggingForegroundService : Service() {
             prayerId = prayerId,
             prayerName = prayerName,
             dateIso = dateIso,
+            pstTimeFormatted = pstTime,
             adhanTimeFormatted = adhanTime,
             jamaahTimeFormatted = jamaahTime,
+            triggerType = triggerType,
             minutesUntilJamaah = minutesUntilJamaah,
-            progressPercent = if (nagIteration > 0) 100 else 65,
+            minutesPassedSinceJamaah = minutesPassed,
+            minutesRemainingUntilEnd = minutesRemaining,
+            repeatIntervalMinutes = repeatIntervalMin,
+            progressPercent = if (triggerType == AlarmTriggerType.STAGE_4_URGENT_END_OF_WINDOW) 92 else 75,
             nagIteration = nagIteration,
             isOngoingForeground = true
         )
@@ -57,7 +70,6 @@ class PrayerNaggingForegroundService : Service() {
                 startForeground(PrayerNotificationHelper.NOTIFICATION_ID, notification)
             }
         } catch (e: Exception) {
-            // Fallback to standard notification manager post if FGS start is restricted
             PrayerNotificationHelper.postNotificationIfPermitted(this, notification)
         }
 
@@ -72,18 +84,28 @@ class PrayerNaggingForegroundService : Service() {
             prayerId: String,
             prayerName: String,
             dateIso: String,
+            pstTime: String,
             adhanTime: String,
             jamaahTime: String,
+            triggerType: AlarmTriggerType,
             minutesUntilJamaah: Int,
+            minutesPassedSinceJamaah: Int,
+            minutesRemainingUntilEnd: Int,
+            repeatIntervalMinutes: Int,
             nagIteration: Int
         ) {
             val serviceIntent = Intent(context, PrayerNaggingForegroundService::class.java).apply {
                 putExtra(ExactPrayerAlarmScheduler.EXTRA_PRAYER_ID, prayerId)
                 putExtra(ExactPrayerAlarmScheduler.EXTRA_PRAYER_NAME, prayerName)
                 putExtra(ExactPrayerAlarmScheduler.EXTRA_DATE_ISO, dateIso)
+                putExtra(ExactPrayerAlarmScheduler.EXTRA_PST_TIME, pstTime)
                 putExtra(ExactPrayerAlarmScheduler.EXTRA_ADHAN_TIME, adhanTime)
                 putExtra(ExactPrayerAlarmScheduler.EXTRA_JAMAAH_TIME, jamaahTime)
+                putExtra(ExactPrayerAlarmScheduler.EXTRA_TRIGGER_TYPE, triggerType.name)
                 putExtra(ExactPrayerAlarmScheduler.EXTRA_MIN_UNTIL_JAMAAH, minutesUntilJamaah)
+                putExtra(ExactPrayerAlarmScheduler.EXTRA_MIN_PASSED_SINCE_JAMAAH, minutesPassedSinceJamaah)
+                putExtra(ExactPrayerAlarmScheduler.EXTRA_MIN_REMAINING_UNTIL_END, minutesRemainingUntilEnd)
+                putExtra(ExactPrayerAlarmScheduler.EXTRA_NAG_INTERVAL_MIN, repeatIntervalMin(repeatIntervalMinutes))
                 putExtra(ExactPrayerAlarmScheduler.EXTRA_NAG_ITERATION, nagIteration)
             }
             try {
@@ -94,16 +116,23 @@ class PrayerNaggingForegroundService : Service() {
                     prayerId = prayerId,
                     prayerName = prayerName,
                     dateIso = dateIso,
+                    pstTimeFormatted = pstTime,
                     adhanTimeFormatted = adhanTime,
                     jamaahTimeFormatted = jamaahTime,
+                    triggerType = triggerType,
                     minutesUntilJamaah = minutesUntilJamaah,
-                    progressPercent = 90,
+                    minutesPassedSinceJamaah = minutesPassedSinceJamaah,
+                    minutesRemainingUntilEnd = minutesRemainingUntilEnd,
+                    repeatIntervalMinutes = repeatIntervalMin(repeatIntervalMinutes),
+                    progressPercent = if (triggerType == AlarmTriggerType.STAGE_4_URGENT_END_OF_WINDOW) 92 else 75,
                     nagIteration = nagIteration,
                     isOngoingForeground = false
                 )
                 PrayerNotificationHelper.postNotificationIfPermitted(context, notification)
             }
         }
+
+        private fun repeatIntervalMin(v: Int): Int = v.coerceIn(5, 60)
 
         fun stopNaggingLoop(context: Context) {
             try {

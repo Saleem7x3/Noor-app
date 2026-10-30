@@ -57,13 +57,18 @@ interface PrayerDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertUserPreferences(prefs: UserPreferencesEntity)
 
-    // Local SQLite City Fallback queries
+    // Local SQLite City Fallback queries (strictly alphabetical)
     @Query("SELECT * FROM local_cities ORDER BY city_name ASC")
     fun getLocalCities(): Flow<List<LocalCityEntity>>
 
-    @Query("SELECT * FROM local_cities")
+    @Query("SELECT * FROM local_cities ORDER BY city_name ASC")
     suspend fun getLocalCitiesSync(): List<LocalCityEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertLocalCities(cities: List<LocalCityEntity>)
+
+    @Query("DELETE FROM local_cities WHERE city_id IN (:cityIds)")
+    suspend fun deleteLocalCitiesByIds(cityIds: List<String>)
 }
+
+

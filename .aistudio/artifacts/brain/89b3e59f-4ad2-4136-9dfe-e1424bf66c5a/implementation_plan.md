@@ -1,284 +1,93 @@
-# Technical Architecture Blueprint: Noor Islamic Prayer & Habit Tracker
+# Noor Prayer — Hero Card Sizing, Solar/Makruh Rows, Fajr–Isha Row Polish & Snooze/Notification Sync Plan
 
-A production-grade Modern Android Development (MAD) architectural blueprint and full-stack Kotlin implementation for **Noor Prayer**, engineered around offline astronomical calculation, `FusedLocationProviderClient` with a local SQLite city fallback, resilient `AlarmManager.setExactAndAllowWhileIdle()` scheduling, `DataStore` state persistence, a Foreground Service persistent "Nagging" loop, and reactive Jetpack Compose UI state flows.
+This update restores the Hero Card's spacious proportions with a clean `"CURRENT PRAYER"` / `"NEXT PRAYER"` header, replaces the top-left badge with the current Day & Date while moving GPS into the City selector pill, adds the three solar/makruh rows (`Sun Rising`, `Top of Head Sun`, `Sun Setting`) and time-of-day icons + start-to-end time ranges to the Fajr–Isha rows, and fixes the Snooze and notification elapsed-time synchronization bugs.
 
----
-
-### User Review & Confirmed Architecture Decisions
+## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> The following architectural specifications confirmed in Phase 1 govern both this blueprint and the live implementation:
-> - **Confirmed Decision 1 — Dynamic Alarm & Nagging Intervals**:
->   - **Trigger 1 (Adhan Start)**: Exact alarm fired at calculated Adhan start time (`T_adhan`).
->   - **Trigger 2 (Pre-Jama'ah Alert)**: Exact alarm fired **X = 15 minutes** before the user-adjusted Jama'ah time (`T_jamaah - 15m`).
->   - **The "Nagging" Loop**: If the prayer is not marked as `PRAYED` in Room, a repeating exact alarm + Foreground Service loop fires every **Y = 20 minutes** (`T_jamaah + 20m * k`).
-> - **Confirmed Decision 2 — Loop Termination & Qada Rollover**:
->   - If a user never taps **"Mark as Prayed"** or **"Dismiss"** before the next Fardh prayer window begins, the active nagging loop automatically terminates, cancels pending nag alarms for the expired prayer, and records the previous prayer status as **`MISSED_QADA`** in Room so the user can track and make up missed prayers.
-> - **Confirmed Decision 3 — Deliverable Scope**:
->   - Implement the complete production architecture in the Android app (FusedLocationProviderClient + Room SQLite fallback, DataStore state machine, Exact Alarm scheduler, BroadcastReceiver, Foreground Notification Service, and interactive Architecture Blueprint & Alarm Inspector view).
+> All choices below reflect your feedback and confirmed preferences:
+
+- **Confirmed Decision 1 — All Three Solar / Makruh Rows (`Sun Rising`, `Top of Head Sun`, `Sun Setting`)**:
+  - Interleave three non-prayer solar/makruh rows in chronological order using the reference image's subtle rose/coral warning style (`WarningIcon` + start time `—————` end time):
+    1. **`Sun Rising`** (after **Fajr**): `Sunrise` to `Sunrise + 15m` (e.g., `06:13 AM ————— 06:28 AM`)
+    2. **`Top of Head Sun`** (before **Dhuhr / Jumu'ah**): `Dhuhr PST - 8m` to `Dhuhr PST` (e.g., `11:56 AM ————— 12:04 PM`)
+    3. **`Sun Setting`** (between **Asr** and **Maghrib**): `Maghrib PST - 15m` to `Maghrib PST` (e.g., `05:39 PM ————— 05:54 PM`)
+- **Confirmed Decision 2 — Improved Fajr to Isha Row Labels & Time-of-Day Icons**:
+  - Each of the 5 Fardh prayer rows displays a distinctive **time-of-day sky icon** on the left (Dawn cloud for Fajr, Sun for Jumu'ah/Dhuhr, Afternoon sun/cloud for Asr, Sunset horizon for Maghrib, Crescent moon for Isha) and the **Start–End prayer window range** (e.g., `03:23 PM – 05:53 PM`) underneath the prayer name, while keeping the interactive **Adhan** and **Jama'ah** pills and completion button on the right.
+- **Confirmed Decision 3 — Top Bar Layout (Day & Date Left Pill + GPS Inside City Pill)**:
+  - **Left Pill**: Displays the **Day and Date** (e.g., `Friday, 30 Oct`).
+  - **Right Pill**: Displays the **GPS / Location icon + City Name** (e.g., `[GPS Icon] Mumbai ▾`), with one-tap Live GPS detection inside the location selector.
+- **Confirmed Decision 4 — Hero Card Proportions & Header**:
+  - Restore larger, more breathable Hero Card vertical padding and typography.
+  - Simplify the top-left header label to **`"CURRENT PRAYER"`** (when in an active prayer window) or **`"NEXT PRAYER"`** (when waiting for the next prayer) so it never clips or truncates (`JAMA'AH STA...`).
+- **Confirmed Decision 5 — Snooze & Notification Elapsed-Time Synchronization**:
+  - **Snooze Fix**: Tapping `Snooze 5m` delays the next notification reminder by 5 minutes without adding `+5m` to the mosque's actual Jama'ah clock time (`featured.jamaahMinutes`). Jama'ah at `04:45 PM` remains `04:45 PM` even when snoozed.
+  - **Notification vs. Hero Card Sync Fix**: Remove the artificial `.coerceAtLeast(10)` floor on elapsed Jama'ah minutes in `PrayerAlarmReceiver` and `PrayerNotificationHelper`, and evaluate the actual time relative to `jamaahEpochMs` when a snoozed alarm triggers so the notification banner always matches the Hero Card's exact elapsed minutes.
 
 ---
 
-### 1. Architecture Overview: Clean Architecture & Unidirectional MVI/MVVM
+## 1. Overview & Core Concept
 
-The system is partitioned into three strict layers (**Presentation**, **Domain**, and **Data/Infrastructure**) communicating exclusively through Kotlin Coroutines and cold/hot `Flow` streams.
-
-```
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                              PRESENTATION LAYER (Jetpack Compose)                      │
-│  ┌──────────────────────┬───────────────────────┬───────────────────┬───────────────┐  │
-│  │ 3-Screen Showcase &  │ Prayer Dashboard &    │ Analytics, Qada & │ Architecture  │  │
-│  │ Lock Banner Preview  │ Jama'ah Offset Editor │ 7-Week Habit Grid │ & Alarm Debug │  │
-│  └──────────┬───────────┴───────────┬───────────┴─────────┬─────────┴───────┬───────┘  │
-│             └───────────────────────┴──────────┬──────────┴─────────────────┘          │
-│                                                ▼ StateFlow<PrayerDashboardUiState>     │
-│  ┌──────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                     PrayerHabitViewModel (MVI / Unidirectional Flow)             │  │
-│  │  • Processes UI Intents (MarkPrayed, Snooze, SelectCity, RequestGps, TriggerSim) │  │
-│  │  • Merges Room Flows + DataStore Alarm State + 1Hz Countdown Ticker              │  │
-│  └─────────────────────────────────────────────┬────────────────────────────────────┘  │
-└────────────────────────────────────────────────┼───────────────────────────────────────┘
-                                                 │
-┌────────────────────────────────────────────────▼───────────────────────────────────────┐
-│                                     DOMAIN LAYER                                       │
-│  ┌────────────────────────────┬─────────────────────────────┬───────────────────────┐  │
-│  │ Offline Solar Adhan Engine │ ResolveLocationUseCase      │ SchedulePrayerAlarms  │  │
-│  │ (MWL / ISNA / Umm al-Qura) │ (GPS Fused -> SQLite City)  │ & NaggingStateMachine │  │
-│  └────────────────────────────┴─────────────────────────────┴───────────────────────┘  │
-└────────────────────────────────────────────────┬───────────────────────────────────────┘
-                                                 │
-┌────────────────────────────────────────────────▼───────────────────────────────────────┐
-│                            DATA & SYSTEM INFRASTRUCTURE LAYER                          │
-│  ┌──────────────────────────┬───────────────────────────┬───────────────────────────┐  │
-│  │ Room SQLite Database     │ Jetpack DataStore         │ Android OS Services       │  │
-│  │ • PrayerLogEntity        │ • ActiveNagPrayerId       │ • FusedLocationClient     │  │
-│  │ • UserPreferencesEntity  │ • NagIterationCount       │ • AlarmManager (Exact)    │  │
-│  │ • LocalCityEntity (SQL)  │ • LastScheduledEpoch      │ • PrayerAlarmReceiver     │  │
-│  │ • AthkaarLogEntity       │ • SnoozeUntilEpochMillis  │ • NaggingForegroundService│  │
-│  └──────────────────────────┴───────────────────────────┴───────────────────────────┘  │
-└────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-#### Layer Responsibilities
-1. **Presentation Layer**:
-   - Stateless Jetpack Compose screens observing a single immutable `StateFlow<PrayerDashboardUiState>` via `collectAsStateWithLifecycle()`.
-   - Dispatches sealed `PrayerUiEvent` / intent actions to `PrayerHabitViewModel`.
-2. **Domain Layer**:
-   - **Astronomical Adhan Engine (`PrayerTimeCalculator`)**: Pure Kotlin solar zenith/declination calculator supporting Muslim World League (18°/17°) and custom high-latitude adjustments with zero network dependency.
-   - **Location Resolution Policy**: Attempts hardware GPS fix via `FusedLocationProviderClient`; if permission is denied, location is disabled, or timeout occurs, falls back seamlessly to the local SQLite `local_cities` table and `UserPreferencesEntity`.
-3. **Data & System Infrastructure Layer**:
-   - **Room Database**: Single source of truth for daily `PrayerLog` states (`PENDING`, `PRAYED`, `MISSED_QADA`, `SNOOZED`), `UserPreferences`, local fallback cities, and `AthkaarLog`.
-   - **Jetpack DataStore (`Preferences`)**: High-frequency, lightweight atomic store tracking the real-time notification state machine (`active_nag_prayer_id`, `nag_count`, `next_alarm_epoch_ms`, `trigger_stage`) across process death and BroadcastReceiver invocations.
-   - **Exact Alarm & Foreground Service Pipeline**: Uses `AlarmManager.setExactAndAllowWhileIdle()` to wake the device in Doze mode, paired with `PrayerNaggingForegroundService` (`foregroundServiceType="specialUse"` / system notification loop) and `PrayerActionReceiver` for instant "Mark as Prayed", "Snooze 5m", and "Dismiss" handling.
+- **What It Does**: Elevates the main Prayers dashboard with clearer visual hierarchy, complete solar/makruh awareness (`Sun Rising`, `Top of Head Sun`, `Sun Setting`), richer Fajr–Isha row metadata, and rock-solid synchronization between the Hero Card countdown/elapsed timer, Snooze actions, and Android system notifications.
+- **Key Value**: Eliminates truncated labels (`CURRENT PRAYER • JAMA'AH STA...`), gives users immediate visibility into both valid prayer windows (`Start – End`) and prohibited solar windows (`Sun Rising`, `Top of Head Sun`, `Sun Setting`), and guarantees that snoozing or receiving a notification never shows conflicting Jama'ah times or elapsed minutes.
 
 ---
 
-### 2. Database Schema (Room Entities & DAO Design)
+## 2. User Experience & Visual Design
 
-Below are the complete Room Entity definitions for `PrayerLogEntity`, `UserPreferencesEntity`, and `LocalCityEntity` (SQLite city fallback), designed to power both the notification state machine and the 7-week GitHub-style analytical grid.
-
-```kotlin
-package com.example.data
-
-import androidx.room.ColumnInfo
-import androidx.room.Entity
-import androidx.room.Index
-import androidx.room.PrimaryKey
-
-enum class PrayerCompletionStatus {
-    PENDING,
-    PRAYED_ON_TIME,
-    PRAYED_LATE,
-    MISSED_QADA
-}
-
-/**
- * Stores daily completion states, timestamps, Jama'ah adherence, and nagging history
- * for each of the 5 Fardh prayers. Indexed by dateIso for fast 7-week grid queries.
- */
-@Entity(
-    tableName = "prayer_logs",
-    primaryKeys = ["date_iso", "prayer_id"],
-    indices = [Index(value = ["date_iso"]), Index(value = ["completion_status"])]
-)
-data class PrayerLogEntity(
-    @ColumnInfo(name = "date_iso") val dateIso: String, // YYYY-MM-DD
-    @ColumnInfo(name = "prayer_id") val prayerId: String, // FAJR, DHUHR, ASR, MAGHRIB, ISHA
-    @ColumnInfo(name = "scheduled_adhan_epoch_ms") val scheduledAdhanEpochMs: Long,
-    @ColumnInfo(name = "scheduled_jamaah_epoch_ms") val scheduledJamaahEpochMs: Long,
-    @ColumnInfo(name = "completion_status") val completionStatus: PrayerCompletionStatus = PrayerCompletionStatus.PENDING,
-    @ColumnInfo(name = "is_prayed") val isPrayed: Boolean = false,
-    @ColumnInfo(name = "is_in_jamaah") val isInJamaah: Boolean = false,
-    @ColumnInfo(name = "completed_at_epoch_ms") val completedAtEpochMs: Long? = null,
-    @ColumnInfo(name = "nag_count_triggered") val nagCountTriggered: Int = 0
-)
-
-/**
- * Stores user location preferences, manual city fallback configuration, calculation convention,
- * per-prayer Jama'ah offsets, and dynamic notification timing buffers (X = 15m, Y = 20m).
- */
-@Entity(tableName = "user_preferences")
-data class UserPreferencesEntity(
-    @PrimaryKey val id: Int = 1,
-    @ColumnInfo(name = "use_gps_location") val useGpsLocation: Boolean = true,
-    @ColumnInfo(name = "selected_city_id") val selectedCityId: String = "makkah",
-    @ColumnInfo(name = "last_latitude") val lastLatitude: Double = 21.4225,
-    @ColumnInfo(name = "last_longitude") val lastLongitude: Double = 39.8262,
-    @ColumnInfo(name = "timezone_offset_hours") val timeZoneOffsetHours: Double = 3.0,
-    @ColumnInfo(name = "calculation_method") val calculationMethod: String = "MWL",
-    @ColumnInfo(name = "pre_jamaah_alert_minutes") val preJamaahAlertMinutes: Int = 15, // X = 15m before Jama'ah
-    @ColumnInfo(name = "nag_interval_minutes") val nagIntervalMinutes: Int = 20,         // Y = 20m nagging loop
-    @ColumnInfo(name = "auto_qada_on_next_prayer") val autoQadaOnNextPrayer: Boolean = true,
-    @ColumnInfo(name = "fajr_jamaah_offset_min") val fajrJamaahOffsetMin: Int = 20,
-    @ColumnInfo(name = "dhuhr_jamaah_offset_min") val dhuhrJamaahOffsetMin: Int = 15,
-    @ColumnInfo(name = "asr_jamaah_offset_min") val asrJamaahOffsetMin: Int = 15,
-    @ColumnInfo(name = "maghrib_jamaah_offset_min") val maghribJamaahOffsetMin: Int = 10,
-    @ColumnInfo(name = "isha_jamaah_offset_min") val ishaJamaahOffsetMin: Int = 15
-)
-
-/**
- * Local SQLite fallback table of world cities for offline manual selection when GPS is unavailable.
- */
-@Entity(tableName = "local_cities")
-data class LocalCityEntity(
-    @PrimaryKey @ColumnInfo(name = "city_id") val cityId: String,
-    @ColumnInfo(name = "city_name") val cityName: String,
-    @ColumnInfo(name = "country_name") val countryName: String,
-    @ColumnInfo(name = "latitude") val latitude: Double,
-    @ColumnInfo(name = "longitude") val longitude: Double,
-    @ColumnInfo(name = "timezone_offset_hours") val timeZoneOffsetHours: Double
-)
-```
+- **Top Bar (Above Hero Card)**:
+  - **Left Badge**: Clean pill showing a calendar icon and the formatted day + date: **`Friday, 30 Oct`**.
+  - **Right Badge**: Interactive location pill showing the GPS reticle icon (`Icons.Filled.GpsFixed`), the active city name (`Mumbai`), and a dropdown chevron. Tapping opens the Location modal where `"Use Live Device GPS"` is featured at the top.
+- **Larger Hero Card**:
+  - Increased vertical padding (`18.dp–20.dp`) and row spacing (`12.dp–14.dp`) for a spacious, balanced look.
+  - Top-left status label reads **`CURRENT PRAYER`** (or **`NEXT PRAYER`** before PST), leaving plenty of room for the **`Shuruq 06:38 • Mid 11:45`** badge on the top-right.
+- **Fajr–Isha Rows & Solar Warning Rows**:
+  - **Fardh Prayer Rows (`Fajr`, `Jumu'ah`/`Dhuhr`, `Asr`, `Maghrib`, `Isha`)**:
+    - Left side: Time-of-day icon + Prayer Name (`Fajr`, `Jumu'ah`, `Asr`, `Maghrib`, `Isha`) on the top line, and the solar window range (`05:01 AM – 06:12 AM`) on the subtitle line below.
+    - Right side: **Adhan** time pill, **Jama'ah** time pill, and the completion checkmark/lock icon.
+  - **Solar / Makruh Rows (`Sun Rising`, `Top of Head Sun`, `Sun Setting`)**:
+    - Styled with a soft rose/coral surface tint and border (`CoralAlert.copy(alpha = 0.14f)` background, `CoralAlert.copy(alpha = 0.45f)` border), a left warning triangle icon, the solar phase title + start time on the left, a horizontal connector line in the middle, and the end time on the right (matching your reference screenshot).
 
 ---
 
-### 3. Core Notification & Exact Alarm Lifecycle Strategy
+## 3. Key Product Decisions & Trade-Offs
 
-To survive aggressive OEM battery management (Doze mode, App Standby Buckets) while respecting Android 14+ background execution limits, the notification lifecycle uses a **3-Stage Exact Alarm + Foreground Service State Machine**:
-
-```
-   [Stage 1: T_adhan]                   [Stage 2: T_jamaah - 15m]              [Stage 3: T_jamaah + 20m * k]
-┌───────────────────────┐            ┌─────────────────────────────┐         ┌─────────────────────────────────┐
-│ Exact Alarm (Trigger1)│            │ Exact Alarm (Trigger 2)     │         │ Persistent Nagging Loop         │
-│ • Fires at Adhan time │───────────▶│ • Fires 15m before Jama'ah  │────────▶│ • Checks Room: isPrayed?        │
-│ • Posts Rich Banner   │            │ • Updates Countdown Badge   │         │ • Starts Foreground Service     │
-│ • Schedules Trigger 2 │            │ • Schedules First Nag (+20m)│         │ • Re-arms Exact Alarm (+20m)    │
-└───────────────────────┘            └─────────────────────────────┘         └────────┬───────────────┬────────┘
-                                                                                      │               │
-                                                       User Taps "Mark as Prayed"     │               │ Next Prayer Starts
-                                                       ┌──────────────────────────────┘               └────────────────────────┐
-                                                       ▼                                                                       ▼
-                                       ┌───────────────────────────────┐                                       ┌───────────────────────────────┐
-                                       │ PrayerActionReceiver          │                                       │ Rollover Handler              │
-                                       │ • Updates Room: PRAYED_ON_TIME│                                       │ • Updates Room: MISSED_QADA   │
-                                       │ • Clears DataStore Nag State  │                                       │ • Cancels Old Nag Alarm       │
-                                       │ • Stops Foreground Service    │                                       │ • Starts Next Prayer Trigger 1│
-                                       └───────────────────────────────┘                                       └───────────────────────────────┘
-```
-
-#### Reference Implementation of the Alarm Receiver, Foreground Service & Action Handling
-
-```kotlin
-package com.example.notification
-
-import android.app.AlarmManager
-import android.app.PendingIntent
-import android.app.Service
-import android.content.BroadcastReceiver
-import android.content.Context
-import android.content.Intent
-import android.os.Build
-import android.os.IBinder
-import androidx.core.app.NotificationCompat
-import com.example.data.AppDatabase
-import com.example.data.PrayerCompletionStatus
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
-
-enum class AlarmTriggerType {
-    TRIGGER_1_ADHAN_START,
-    TRIGGER_2_PRE_JAMAAH_15M,
-    TRIGGER_3_NAGGING_LOOP_20M
-}
-
-class ExactPrayerAlarmScheduler(private val context: Context) {
-    private val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-
-    fun scheduleExactTrigger(
-        prayerId: String,
-        dateIso: String,
-        triggerType: AlarmTriggerType,
-        triggerAtEpochMillis: Long,
-        nagIteration: Int = 0
-    ) {
-        val intent = Intent(context, PrayerAlarmReceiver::class.java).apply {
-            action = ACTION_PRAYER_ALARM_TRIGGER
-            putExtra(EXTRA_PRAYER_ID, prayerId)
-            putExtra(EXTRA_DATE_ISO, dateIso)
-            putExtra(EXTRA_TRIGGER_TYPE, triggerType.name)
-            putExtra(EXTRA_NAG_ITERATION, nagIteration)
-        }
-        val requestCode = (prayerId.hashCode() * 31) + triggerType.ordinal
-        val pendingIntent = PendingIntent.getBroadcast(
-            context,
-            requestCode,
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
-            alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtEpochMillis, pendingIntent)
-        } else {
-            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtEpochMillis, pendingIntent)
-        }
-    }
-
-    fun cancelAllForPrayer(prayerId: String) {
-        AlarmTriggerType.entries.forEach { type ->
-            val requestCode = (prayerId.hashCode() * 31) + type.ordinal
-            val intent = Intent(context, PrayerAlarmReceiver::class.java).apply {
-                action = ACTION_PRAYER_ALARM_TRIGGER
-            }
-            val pi = PendingIntent.getBroadcast(
-                context,
-                requestCode,
-                intent,
-                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
-            )
-            if (pi != null) alarmManager.cancel(pi)
-        }
-    }
-
-    companion object {
-        const val ACTION_PRAYER_ALARM_TRIGGER = "com.example.action.PRAYER_ALARM_TRIGGER"
-        const val ACTION_MARK_PRAYED = "com.example.action.MARK_PRAYED"
-        const val ACTION_SNOOZE_5M = "com.example.action.SNOOZE_5M"
-        const val ACTION_DISMISS_NAG = "com.example.action.DISMISS_NAG"
-        const val EXTRA_PRAYER_ID = "extra_prayer_id"
-        const val EXTRA_DATE_ISO = "extra_date_iso"
-        const val EXTRA_TRIGGER_TYPE = "extra_trigger_type"
-        const val EXTRA_NAG_ITERATION = "extra_nag_iteration"
-    }
-}
-```
-
-When `PrayerAlarmReceiver` receives `ACTION_PRAYER_ALARM_TRIGGER`:
-1. Calls `goAsync()` to acquire a temporary broadcast execution window on `Dispatchers.IO`.
-2. Queries Room `PrayerDao` for `(dateIso, prayerId)`:
-   - If `isPrayed == true`, it immediately aborts and stops `PrayerNaggingForegroundService`.
-   - If `triggerType == TRIGGER_1_ADHAN_START`, it also inspects the **previous prayer**; if the previous prayer is still `PENDING`, it transitions the previous prayer to `MISSED_QADA` and cancels its nagging loop.
-   - If `triggerType == TRIGGER_3_NAGGING_LOOP_20M` and `isPrayed == false`, it increments `nagCountTriggered` in Room and `DataStore`, starts/updates `PrayerNaggingForegroundService`, and schedules the next exact alarm for `now + 20 minutes` (`setExactAndAllowWhileIdle`).
+- **Decision 1: Decoupling Reminder Snooze from Mosque Jama'ah Clock Time**
+  - *Chosen Approach*: Keep `jamaahSec = featured.jamaahMinutes * 60` invariant when `Snooze 5m` is tapped, and use snooze exclusively to schedule an exact alarm for `System.currentTimeMillis() + 5 * 60_000L` while suppressing intermediate nags during those 5 minutes.
+  - *Why*: Previously, adding `combinedSnooze` to `featured.jamaahMinutes` shifted the mosque's Jama'ah time into the future (`4:45 PM + 10m = 4:55 PM`), causing the UI to falsely say `"Jama'ah in 10m"` after Jama'ah had already passed.
+- **Decision 2: Exact Elapsed Minutes in System Notifications**
+  - *Chosen Approach*: Compute `minPassedSinceJamaah = ((nowMs - effectiveJamaahEpoch) / 60_000L).toInt().coerceAtLeast(1)` without `.coerceAtLeast(10)`, and in `ACTION_SNOOZE_5M` dynamically pick `STAGE_PRE_JAMAAH` if `nextEpoch < jamaahEpochMs` or `STAGE_3_POST_JAMAAH_NAG` if `nextEpoch >= jamaahEpochMs`.
+  - *Why*: Ensures that if a user snoozes a pre-Jama'ah alert at 4:41 PM and it fires at 4:46 PM (1 minute after 4:45 PM Jama'ah), both the notification and the Hero Card display **`1 min elapsed since Jama'ah`**.
 
 ---
 
-### 4. Jetpack Compose Reactive State Structure
+## 4. Technical Architecture & Data Strategy *(Technical Reference)*
 
-The presentation layer subscribes to a single cold-to-hot `StateFlow<PrayerDashboardUiState>` constructed via `combine()` over:
-1. `PrayerDao.getPrayersForDate(todayIso)` (Room reactive SQLite trigger)
-2. `PrayerDao.getUserPreferences()` (Jama'ah buffers, X=15m, Y=20m, GPS vs City mode)
-3. `PrayerAlarmDataStore.alarmStateFlow` (Active nagging prayer, nag iteration count, next exact alarm timestamp)
-4. `tickerFlow` (1-second coroutine ticker updating countdown badges and lock screen progress bars)
+```
+┌───────────────────────────────────────────────────────────────────────────┐
+│                           Prayers Screen Layout                           │
+├───────────────────────────────────────────────────────────────────────────┤
+│  [ 📅 Friday, 30 Oct ]                         [ 🎯 Mumbai ▾ (GPS/City) ] │
+├───────────────────────────────────────────────────────────────────────────┤
+│  HERO CARD (Spacious Proportions)                                         │
+│  CURRENT PRAYER                                 ☀️ Shuruq 06:38 • Mid 11:45│
+│  Asr العصر                                            [ Jama'ah 04:45 PM ] │
+│  JAMA'AH TIME                                                             │
+│  04:45 PM                                      2 mins elapsed since Jama'ah│
+├───────────────────────────────────────────────────────────────────────────┤
+│  Daily Prayers                                     Adhan   Jama'ah   Done │
+│  ☁️ Fajr (05:01 AM – 06:12 AM)                  [05:00 AM] [05:20 AM] [✓] │
+│  ⚠️ Sun Rising   06:13 AM ──────────────────────── 06:28 AM               │
+│  ⚠️ Top of Head Sun  11:56 AM ──────────────────── 12:04 PM               │
+│  ☀️ Jumu'ah (12:04 PM – 03:22 PM)               [01:00 PM] [01:30 PM] [✓] │
+│  🌤️ Asr (03:23 PM – 05:53 PM)                   [04:30 PM] [04:45 PM] [✓] │
+│  ⚠️ Sun Setting  05:39 PM ──────────────────────── 05:54 PM               │
+│  🌅 Maghrib (05:54 PM – 07:05 PM)               [06:08 PM] [06:18 PM] [🔒] │
+│  🌙 Isha (07:06 PM – 11:28 PM)                  [08:15 PM] [08:30 PM] [🔒] │
+└───────────────────────────────────────────────────────────────────────────┘
+```
 
-Whenever the user taps **"Mark as Prayed"** on either the Android System Notification (`BroadcastReceiver`), the Lock Screen Preview (Screen 1), or the Prayer Dashboard row (Screen 2), the Room table updates atomically, DataStore clears the nagging state, and Compose recomposes the progress ring, streak counter, and 7-week contribution grid in a single frame.
+- **Data & State Updates**:
+  - Add `dayAndDateBadgeText` (e.g., `"Friday, 30 Oct"`) and `solarTransitionItems` (`Sun Rising`, `Top of Head Sun`, `Sun Setting` start/end times) to `PrayerDashboardUiState`.
+  - Add formatted solar window start and end strings (`windowStartFormatted`, `windowEndFormatted`, e.g., `"05:01 AM – 06:12 AM"`) to each `PrayerItemUiModel` (where Fajr ends at Sunrise `06:12 AM`, Dhuhr/Jumu'ah ends at `Asr PST - 1m`, Asr ends at `Maghrib PST - 1m`, Maghrib ends at `Isha PST - 1m`, and Isha ends at `Islamic Midnight`).
+  - Update `PrayerHabitViewModel`, `PrayerAlarmReceiver`, and `PrayerNotificationHelper` so Snooze only delays reminder alerts by 5 minutes without mutating Jama'ah time, and notifications always display the exact real-time minutes until or since Jama'ah.

@@ -13,7 +13,7 @@ import androidx.room.RoomDatabase
         UserPreferencesEntity::class,
         LocalCityEntity::class
     ],
-    version = 2,
+    version = 6,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

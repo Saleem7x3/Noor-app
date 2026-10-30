@@ -51,17 +51,23 @@ class MainActivity : ComponentActivity() {
                     onSetDisplayMode = viewModel::setDisplayMode,
                     onSelectTab = viewModel::selectTab,
                     onSelectCity = viewModel::selectCity,
+                    onSearchLocationQueryChanged = viewModel::updateLocationSearchQuery,
+                    onAddCustomLocation = viewModel::addAndSelectCustomLocation,
                     onRequestGpsLocation = viewModel::requestGpsOrSqliteFallback,
                     onMarkFeaturedAsPrayed = viewModel::markFeaturedPrayerAsPrayed,
                     onSnoozeFeaturedFiveMin = viewModel::snoozeFeaturedPrayerFiveMinutes,
                     onSimulateQadaRollover = viewModel::simulateNextPrayerAutoQadaRollover,
                     onTogglePrayerCompleted = viewModel::togglePrayerCompletion,
-                    onEditJamaahClicked = viewModel::openJamaahEditor,
+                    onEditJamaahClicked = { prayer -> viewModel.openJamaahEditor(prayer, "JAMAAH") },
+                    onEditAdhanClicked = { prayer -> viewModel.openJamaahEditor(prayer, "ADHAN") },
                     onSaveJamaahOffset = viewModel::saveJamaahOffset,
+                    onSavePrayerTimeSettings = viewModel::savePrayerTimeSettings,
                     onDismissJamaahDialog = viewModel::dismissJamaahEditor,
                     onStepAthkaar = viewModel::stepAthkaarCounter,
                     onToggleAthkaarComplete = viewModel::toggleAthkaarCompletion,
-                    onBannerMessage = viewModel::showTransientBanner
+                    onBannerMessage = viewModel::showTransientBanner,
+                    onToggleCountdownMode = viewModel::toggleNextPrayerCountdownMode,
+                    onUpdateRepeatInterval = viewModel::updateNotificationRepeatInterval
                 )
             }
         }
