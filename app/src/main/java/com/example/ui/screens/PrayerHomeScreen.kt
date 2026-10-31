@@ -158,14 +158,13 @@ fun PrayerHomeScreenContent(
                     shape = RoundedCornerShape(50),
                     border = BorderStroke(1.dp, SlateStrokeBorder.copy(alpha = 0.85f)),
                     modifier = Modifier
-                        .weight(1f, fill = false)
                         .clip(RoundedCornerShape(50))
                         .testTag("day_date_badge")
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                        modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Outlined.CalendarToday,
@@ -180,8 +179,7 @@ fun PrayerHomeScreenContent(
                             color = CrispOffWhite,
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
-                            softWrap = false,
-                            overflow = TextOverflow.Ellipsis
+                            softWrap = false
                         )
                     }
                 }
@@ -194,14 +192,15 @@ fun PrayerHomeScreenContent(
                     shape = RoundedCornerShape(50),
                     border = BorderStroke(1.dp, ElegantGold.copy(alpha = 0.55f)),
                     modifier = Modifier
+                        .weight(1f, fill = false)
                         .clip(RoundedCornerShape(50))
                         .clickable { showLocationSearchModal = true }
                         .testTag("city_dropdown_selector")
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
                     ) {
                         Box(
                             modifier = Modifier
@@ -228,12 +227,13 @@ fun PrayerHomeScreenContent(
                         Text(
                             text = uiState.selectedCity.name,
                             style = MaterialTheme.typography.labelLarge,
-                            fontSize = if (isTightDisplay) 12.sp else 13.sp,
+                            fontSize = if (isTightDisplay) 11.5.sp else 12.5.sp,
                             color = ElegantGold,
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,
                             softWrap = false,
-                            overflow = TextOverflow.Ellipsis
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
                         )
                         Icon(
                             imageVector = Icons.Filled.ArrowDropDown,
@@ -245,23 +245,24 @@ fun PrayerHomeScreenContent(
                 }
             }
 
-            // Hero Card: Restored Spacious Proportions + Clean "CURRENT PRAYER" / "NEXT PRAYER" Header
+            // Hero Card: Restored Bubbly 28.dp Corners, Tall Open Sky Gap, and Bottom Cluster Pushed Down
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("hero_current_prayer_card"),
-                shape = RoundedCornerShape(24.dp),
+                shape = RoundedCornerShape(28.dp),
                 colors = CardDefaults.cardColors(containerColor = ElevatedSlateSurface),
                 border = BorderStroke(
-                    1.3.dp,
+                    1.4.dp,
                     if (uiState.isIshaMissedAfterMidnight) CoralAlert.copy(alpha = 0.75f)
-                    else ElegantGold.copy(alpha = 0.6f)
+                    else ElegantGold.copy(alpha = 0.65f)
                 ),
                 elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
             ) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .heightIn(min = if (isTightDisplay) 215.dp else 240.dp)
                         .background(
                             Brush.linearGradient(
                                 colors = listOf(
@@ -278,59 +279,97 @@ fun PrayerHomeScreenContent(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .heightIn(min = if (isTightDisplay) 215.dp else 240.dp)
                             .padding(
-                                horizontal = if (isTightDisplay) 16.dp else 20.dp,
-                                vertical = if (isTightDisplay) 16.dp else 20.dp
+                                start = if (isTightDisplay) 18.dp else 22.dp,
+                                end = if (isTightDisplay) 18.dp else 22.dp,
+                                top = if (isTightDisplay) 18.dp else 20.dp,
+                                bottom = if (isTightDisplay) 12.dp else 14.dp
                             ),
-                        verticalArrangement = Arrangement.spacedBy(if (isTightDisplay) 12.dp else 16.dp)
+                        verticalArrangement = Arrangement.SpaceBetween
                     ) {
-                        // Top Row: Clean Status Header ("CURRENT PRAYER" / "NEXT PRAYER") + Shuruq & Midnight Badge
+                        // Top Row: Status Header ("CURRENT PRAYER" / "NEXT PRAYER") + Prayer Title ("Jumu'ah الجمعة") on Left, Time-Based Solar Badge on Right
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.Top
                         ) {
-                            Text(
-                                text = uiState.heroHeaderStatusLabel,
-                                style = MaterialTheme.typography.labelMedium,
-                                fontSize = if (isTightDisplay) 11.sp else 12.sp,
-                                color = when {
-                                    uiState.isIshaMissedAfterMidnight -> CoralAlert
-                                    uiState.isAllTodayPrayersCompleted -> EmeraldCompleted
-                                    else -> ElegantGold
-                                },
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                softWrap = false,
-                                overflow = TextOverflow.Ellipsis,
+                            Column(
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
                                 modifier = Modifier.weight(1f, fill = false)
-                            )
+                            ) {
+                                Text(
+                                    text = uiState.heroHeaderStatusLabel,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontSize = if (isTightDisplay) 12.sp else 13.5.sp,
+                                    color = when {
+                                        uiState.isIshaMissedAfterMidnight -> CoralAlert
+                                        uiState.isAllTodayPrayersCompleted -> EmeraldCompleted
+                                        else -> ElegantGold
+                                    },
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text(
+                                        text = featuredPrayer?.nameEnglish ?: "Asr",
+                                        style = if (isTightDisplay) {
+                                            MaterialTheme.typography.headlineMedium
+                                        } else {
+                                            MaterialTheme.typography.headlineLarge
+                                        },
+                                        fontSize = if (isTightDisplay) 28.sp else 34.sp,
+                                        color = CrispOffWhite,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
+                                    Text(
+                                        text = featuredPrayer?.nameArabic ?: "العصر",
+                                        style = if (isTightDisplay) {
+                                            MaterialTheme.typography.titleLarge
+                                        } else {
+                                            MaterialTheme.typography.headlineSmall
+                                        },
+                                        fontSize = if (isTightDisplay) 22.sp else 26.sp,
+                                        color = ElegantGold,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
+                                }
+                            }
 
                             Spacer(modifier = Modifier.width(6.dp))
 
                             Surface(
-                                color = DeepSlateDarker.copy(alpha = 0.8f),
+                                color = DeepSlateDarker.copy(alpha = 0.85f),
                                 shape = RoundedCornerShape(50),
-                                border = BorderStroke(1.dp, SlateStrokeBorder)
+                                border = BorderStroke(1.dp, SlateStrokeBorder.copy(alpha = 0.9f))
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(5.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Outlined.WbSunny,
-                                        contentDescription = "Sunrise and Islamic Midnight",
+                                        contentDescription = "Solar cycle badge",
                                         tint = RadiantAmberGlow,
-                                        modifier = Modifier.size(11.dp)
+                                        modifier = Modifier.size(13.dp)
                                     )
-                                    val sunriseShort = uiState.sunriseTimeFormatted.substringBefore(" ")
-                                    val midShort = uiState.islamicMidnightFormatted.substringBefore(" ")
                                     Text(
-                                        text = "Shuruq $sunriseShort • Mid $midShort",
+                                        text = uiState.heroSolarBadgeText,
                                         style = MaterialTheme.typography.labelSmall,
-                                        fontSize = if (isTightDisplay) 9.5.sp else 10.5.sp,
+                                        fontSize = if (isTightDisplay) 11.sp else 12.sp,
                                         color = MutedPeriwinkle,
+                                        fontWeight = FontWeight.SemiBold,
                                         maxLines = 1,
                                         softWrap = false
                                     )
@@ -338,85 +377,19 @@ fun PrayerHomeScreenContent(
                             }
                         }
 
-                        // Middle Row: Prayer Name (English + Arabic) on Left, Jama'ah Pill on Right
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                modifier = Modifier.weight(1f, fill = false)
-                            ) {
-                                Text(
-                                    text = featuredPrayer?.nameEnglish ?: "Asr",
-                                    style = if (isTightDisplay) {
-                                        MaterialTheme.typography.headlineSmall
-                                    } else {
-                                        MaterialTheme.typography.headlineMedium
-                                    },
-                                    color = CrispOffWhite,
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 1,
-                                    softWrap = false
-                                )
-                                Text(
-                                    text = featuredPrayer?.nameArabic ?: "العصر",
-                                    style = if (isTightDisplay) {
-                                        MaterialTheme.typography.titleMedium
-                                    } else {
-                                        MaterialTheme.typography.titleLarge
-                                    },
-                                    color = ElegantGold,
-                                    fontWeight = FontWeight.SemiBold,
-                                    maxLines = 1,
-                                    softWrap = false
-                                )
-                            }
+                        // Open Sky Gap: Pushes bottom cluster vertically down toward the bottom wave edge
+                        Spacer(modifier = Modifier.height(if (isTightDisplay) 52.dp else 68.dp))
 
-                            Spacer(modifier = Modifier.width(8.dp))
-
-                            // Jama'ah Time Pill (tappable to edit)
-                            Surface(
-                                color = GoldContainerDark.copy(alpha = 0.92f),
-                                shape = RoundedCornerShape(50),
-                                border = BorderStroke(
-                                    1.dp,
-                                    if (uiState.isJamaahTimePassed) RadiantAmberGlow else ElegantGold.copy(alpha = 0.65f)
-                                ),
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(50))
-                                    .clickable {
-                                        featuredPrayer?.let { onEditJamaahClicked(it) }
-                                    }
-                                    .testTag("hero_jamaah_pill")
-                            ) {
-                                Text(
-                                    text = uiState.heroJamaahPillText,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontSize = if (isTightDisplay) 11.5.sp else 12.5.sp,
-                                    color = if (uiState.isJamaahTimePassed) RadiantAmberGlow else ElegantGold,
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 1,
-                                    softWrap = false,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.padding(
-                                        horizontal = if (isTightDisplay) 11.dp else 13.dp,
-                                        vertical = 6.dp
-                                    )
-                                )
-                            }
-                        }
-
-                        // Bottom Row: Left = STARTS AT -> ADHAN TIME -> JAMA'AH TIME, Right = 4-Phase Status Text
+                        // Bottom Cluster: Left = Stage Time Display, Right = Plump Jama'ah Pill & Large Countdown
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.Bottom
                         ) {
+                            // Bottom-Left Column: Time Display (STARTS AT / ADHAN TIME / JAMA'AH TIME)
                             Column(
-                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                                verticalArrangement = Arrangement.spacedBy(1.dp),
+                                modifier = Modifier.weight(1f, fill = false)
                             ) {
                                 Text(
                                     text = uiState.heroLeftTimeLabel,
@@ -429,8 +402,8 @@ fun PrayerHomeScreenContent(
                                 )
                                 Text(
                                     text = uiState.heroLeftTimeValue.ifEmpty { featuredAdhan },
-                                    style = MaterialTheme.typography.headlineSmall,
-                                    fontSize = if (isTightDisplay) 21.sp else 25.sp,
+                                    style = MaterialTheme.typography.headlineMedium,
+                                    fontSize = if (isTightDisplay) 24.sp else 28.sp,
                                     color = ElegantGold,
                                     fontWeight = FontWeight.Bold,
                                     maxLines = 1,
@@ -438,22 +411,56 @@ fun PrayerHomeScreenContent(
                                 )
                             }
 
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(10.dp))
 
-                            Text(
-                                text = uiState.heroCountdownSubtitleText,
-                                style = MaterialTheme.typography.labelLarge,
-                                fontSize = if (isTightDisplay) 12.5.sp else 14.sp,
-                                color = if (uiState.isJamaahTimePassed) RadiantAmberGlow else CrispOffWhite,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                softWrap = false,
-                                overflow = TextOverflow.Ellipsis,
-                                textAlign = TextAlign.End,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .testTag("hero_countdown_status_text")
-                            )
+                            // Bottom-Right Column: Plump Bubbly Jama'ah Pill + Larger Countdown Text
+                            Column(
+                                horizontalAlignment = Alignment.End,
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Surface(
+                                    color = GoldContainerDark.copy(alpha = 0.95f),
+                                    shape = RoundedCornerShape(50),
+                                    border = BorderStroke(
+                                        1.2.dp,
+                                        if (uiState.isJamaahTimePassed) RadiantAmberGlow else ElegantGold.copy(alpha = 0.75f)
+                                    ),
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(50))
+                                        .clickable {
+                                            featuredPrayer?.let { onEditJamaahClicked(it) }
+                                        }
+                                        .testTag("hero_jamaah_pill")
+                                ) {
+                                    Text(
+                                        text = uiState.heroJamaahPillText,
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontSize = if (isTightDisplay) 13.sp else 14.5.sp,
+                                        color = if (uiState.isJamaahTimePassed) RadiantAmberGlow else ElegantGold,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.padding(
+                                            horizontal = if (isTightDisplay) 13.dp else 16.dp,
+                                            vertical = if (isTightDisplay) 7.dp else 8.dp
+                                        )
+                                    )
+                                }
+
+                                Text(
+                                    text = uiState.heroCountdownSubtitleText,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontSize = if (isTightDisplay) 14.sp else 16.5.sp,
+                                    color = if (uiState.isJamaahTimePassed) RadiantAmberGlow else CrispOffWhite,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis,
+                                    textAlign = TextAlign.End,
+                                    modifier = Modifier.testTag("hero_countdown_status_text")
+                                )
+                            }
                         }
                     }
                 }
@@ -480,30 +487,23 @@ fun PrayerHomeScreenContent(
                 )
 
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(if (isTightDisplay) 12.dp else 18.dp),
+                    horizontalArrangement = Arrangement.spacedBy(if (isTightDisplay) 14.dp else 20.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.padding(end = 4.dp)
                 ) {
                     Text(
-                        text = stringResource(R.string.start_time_column),
+                        text = "Adhan & Jama'ah",
                         style = MaterialTheme.typography.labelSmall,
-                        fontSize = if (isTightDisplay) 10.5.sp else 11.5.sp,
-                        color = MutedPeriwinkle,
-                        maxLines = 1,
-                        softWrap = false
-                    )
-                    Text(
-                        text = stringResource(R.string.jamaah_time_column),
-                        style = MaterialTheme.typography.labelSmall,
-                        fontSize = if (isTightDisplay) 10.5.sp else 11.5.sp,
+                        fontSize = if (isTightDisplay) 11.sp else 12.sp,
                         color = ElegantGold,
+                        fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
                         softWrap = false
                     )
                     Text(
                         text = stringResource(R.string.status_column),
                         style = MaterialTheme.typography.labelSmall,
-                        fontSize = if (isTightDisplay) 10.5.sp else 11.5.sp,
+                        fontSize = if (isTightDisplay) 11.sp else 12.sp,
                         color = MutedPeriwinkle,
                         maxLines = 1,
                         softWrap = false
@@ -1698,7 +1698,7 @@ private fun PrayerRowCard(
 
     Surface(
         color = containerColor,
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(22.dp),
         border = BorderStroke(if (isHighlighted) 1.5.dp else 1.dp, borderColor),
         modifier = Modifier
             .fillMaxWidth()
@@ -1707,42 +1707,57 @@ private fun PrayerRowCard(
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
             val fontScale = LocalDensity.current.fontScale
             val isTightSpace = isCompact || maxWidth < 385.dp || fontScale > 1.03f
-            val showArabicScript = !isTightSpace && (maxWidth >= 405.dp || prayer.nameEnglish.length <= 4)
 
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(
-                        horizontal = if (isTightSpace) 10.dp else 13.dp,
-                        vertical = if (isTightSpace) 9.dp else 11.dp
+                        horizontal = if (isTightSpace) 13.dp else 16.dp,
+                        vertical = if (isTightSpace) 12.dp else 15.dp
                     ),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                verticalArrangement = Arrangement.spacedBy(if (isTightSpace) 8.dp else 10.dp)
             ) {
-                // Left: Time-of-Day Icon + Prayer Name & Solar Window Start-to-End Range
+                // Top Row: Time-of-Day Icon + English & Arabic Prayer Name on Left; Vertically Stacked Adhan & Jama'ah Pills + Check on Right
                 Row(
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(if (isTightSpace) 8.dp else 10.dp),
-                    modifier = Modifier.weight(1f, fill = false)
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Icon(
-                        imageVector = prayerTimeIcon,
-                        contentDescription = prayer.nameEnglish,
-                        tint = prayerIconTint,
-                        modifier = Modifier.size(if (isTightSpace) 19.dp else 21.dp)
-                    )
-
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(1.dp)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(if (isTightSpace) 8.dp else 11.dp),
+                        modifier = Modifier.weight(1f, fill = false)
                     ) {
+                        Box(
+                            modifier = Modifier
+                                .size(if (isTightSpace) 34.dp else 38.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    when {
+                                        isHighlighted -> GoldContainerDark.copy(alpha = 0.65f)
+                                        prayer.isPrayed -> EmeraldContainer.copy(alpha = 0.35f)
+                                        isMissedQada -> CoralAlert.copy(alpha = 0.2f)
+                                        else -> DeepSlateDarker.copy(alpha = 0.8f)
+                                    }
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = prayerTimeIcon,
+                                contentDescription = prayer.nameEnglish,
+                                tint = prayerIconTint,
+                                modifier = Modifier.size(if (isTightSpace) 18.dp else 20.dp)
+                            )
+                        }
+
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            horizontalArrangement = Arrangement.spacedBy(if (isTightSpace) 5.dp else 6.dp)
                         ) {
                             Text(
                                 text = prayer.nameEnglish,
                                 style = MaterialTheme.typography.titleMedium,
-                                fontSize = if (isTightSpace) 14.5.sp else 16.sp,
+                                fontSize = if (isTightSpace) 15.sp else 17.5.sp,
                                 color = when {
                                     isHighlighted -> ElegantGold
                                     isMissedQada -> CoralAlert
@@ -1750,144 +1765,187 @@ private fun PrayerRowCard(
                                 },
                                 fontWeight = FontWeight.Bold,
                                 maxLines = 1,
-                                softWrap = false,
-                                overflow = TextOverflow.Ellipsis
+                                softWrap = false
                             )
-                            if (showArabicScript) {
+                            Text(
+                                text = prayer.nameArabic,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontSize = if (isTightSpace) 13.5.sp else 15.sp,
+                                color = if (isHighlighted) ElegantGold else MutedPeriwinkle,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(6.dp))
+
+                    // Right: Vertically Stacked Adhan & Jama'ah Pills + Circular Checkmark / Qaza Badge
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(if (isTightSpace) 6.dp else 10.dp)
+                    ) {
+                        // Vertically Stacked Time Pills (Top = Adhan, Bottom = Jama'ah)
+                        Column(
+                            horizontalAlignment = Alignment.End,
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            // Top Pill: Adhan
+                            Surface(
+                                color = DeepSlateDarker.copy(alpha = 0.85f),
+                                shape = RoundedCornerShape(50),
+                                border = BorderStroke(1.dp, SlateStrokeBorder.copy(alpha = 0.85f)),
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(50))
+                                    .clickable(onClick = onEditAdhan)
+                                    .testTag("edit_adhan_${prayer.id.lowercase()}")
+                            ) {
                                 Text(
-                                    text = prayer.nameArabic,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontSize = 13.sp,
-                                    color = MutedPeriwinkle,
-                                    fontWeight = FontWeight.Medium,
+                                    text = "Adhan $adhanFormatted",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontSize = if (isTightSpace) 10.sp else 11.sp,
+                                    color = CrispOffWhite,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.padding(
+                                        horizontal = if (isTightSpace) 7.dp else 9.dp,
+                                        vertical = 3.dp
+                                    ),
                                     maxLines = 1,
                                     softWrap = false
                                 )
                             }
+
+                            // Bottom Pill: Jama'ah
+                            Surface(
+                                color = if (prayer.isCurrent) GoldContainerDark else DeepSlateDarker.copy(alpha = 0.95f),
+                                shape = RoundedCornerShape(50),
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (prayer.isCurrent) ElegantGold else ElegantGold.copy(alpha = 0.55f)
+                                ),
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(50))
+                                    .clickable(onClick = onEditJamaah)
+                                    .testTag("edit_jamaah_${prayer.id.lowercase()}")
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(
+                                        horizontal = if (isTightSpace) 7.dp else 9.dp,
+                                        vertical = 3.dp
+                                    ),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                ) {
+                                    Text(
+                                        text = "Jama'ah $jamaahFormatted",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontSize = if (isTightSpace) 10.sp else 11.sp,
+                                        color = ElegantGold,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
+                                    Icon(
+                                        imageVector = Icons.Filled.Edit,
+                                        contentDescription = "Edit times",
+                                        tint = ElegantGold,
+                                        modifier = Modifier.size(9.dp)
+                                    )
+                                }
+                            }
                         }
 
-                        Text(
-                            text = "$pstFormatted – $endFormatted",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontSize = if (isTightSpace) 9.5.sp else 10.5.sp,
-                            color = MutedPeriwinkle,
-                            fontWeight = FontWeight.Medium,
-                            maxLines = 1,
-                            softWrap = false,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        // Completion Check Button: Unlocked at Prayer Start Time (PST), or logs Qaza make-up
+                        val isLockedBeforePst = !prayer.isPrayed && !prayer.canMarkPrayed
+                        IconButton(
+                            onClick = onToggleCompleted,
+                            modifier = Modifier
+                                .size(if (isTightSpace) 36.dp else 40.dp)
+                                .testTag("toggle_prayer_${prayer.id.lowercase()}")
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(if (isTightSpace) 28.dp else 32.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        when {
+                                            prayer.isPrayed -> EmeraldCompleted
+                                            isLockedBeforePst -> DeepSlateDarker.copy(alpha = 0.7f)
+                                            isMissedQada -> CoralAlert.copy(alpha = 0.25f)
+                                            else -> EmeraldContainer.copy(alpha = 0.35f)
+                                        }
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (isMissedQada && !prayer.isPrayed) {
+                                    Text(
+                                        text = "Qaza",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontSize = 8.5.sp,
+                                        color = CoralAlert,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = if (isLockedBeforePst) Icons.Outlined.Lock else Icons.Filled.Check,
+                                        contentDescription = when {
+                                            prayer.isPrayed -> "${prayer.nameEnglish} completed"
+                                            isLockedBeforePst -> "${prayer.nameEnglish} unlocks at Start Time ($pstFormatted)"
+                                            else -> "Mark ${prayer.nameEnglish} as completed"
+                                        },
+                                        tint = when {
+                                            prayer.isPrayed -> DeepSlateBlue
+                                            isLockedBeforePst -> MutedPeriwinkle.copy(alpha = 0.35f)
+                                            else -> MutedPeriwinkle.copy(alpha = 0.7f)
+                                        },
+                                        modifier = Modifier.size(if (isLockedBeforePst) 14.dp else 16.dp)
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
 
-                Spacer(modifier = Modifier.width(6.dp))
-
-                // Right: Compact Adhan Pill, Jama'ah Pill, and Checkmark (locked before Jama'ah time)
+                // Bottom Row: Prayer Start Time ───────── Prayer End Time (matching SolarWarningRowCard)
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(if (isTightSpace) 5.dp else 7.dp)
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Adhan Tappable Pill
-                    Surface(
-                        color = DeepSlateDarker.copy(alpha = 0.75f),
-                        shape = RoundedCornerShape(9.dp),
-                        border = BorderStroke(1.dp, SlateStrokeBorder),
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(9.dp))
-                            .clickable(onClick = onEditAdhan)
-                            .testTag("edit_adhan_${prayer.id.lowercase()}")
-                    ) {
-                        Text(
-                            text = adhanFormatted,
-                            style = MaterialTheme.typography.labelMedium,
-                            fontSize = if (isTightSpace) 11.sp else 11.5.sp,
-                            color = CrispOffWhite,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(
-                                horizontal = if (isTightSpace) 7.dp else 8.dp,
-                                vertical = if (isTightSpace) 5.dp else 6.dp
-                            ),
-                            maxLines = 1,
-                            softWrap = false
-                        )
-                    }
+                    Text(
+                        text = pstFormatted,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontSize = if (isTightSpace) 12.5.sp else 13.5.sp,
+                        color = if (isHighlighted) ElegantGold else CrispOffWhite.copy(alpha = 0.9f),
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        softWrap = false
+                    )
 
-                    // Jama'ah Tappable Pill
-                    Surface(
-                        color = if (prayer.isCurrent) GoldContainerDark else DeepSlateDarker.copy(alpha = 0.9f),
-                        shape = RoundedCornerShape(9.dp),
-                        border = BorderStroke(
-                            1.dp,
-                            if (prayer.isCurrent) ElegantGold else ElegantGold.copy(alpha = 0.5f)
-                        ),
+                    Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(9.dp))
-                            .clickable(onClick = onEditJamaah)
-                            .testTag("edit_jamaah_${prayer.id.lowercase()}")
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(
-                                horizontal = if (isTightSpace) 7.dp else 8.dp,
-                                vertical = if (isTightSpace) 5.dp else 6.dp
-                            ),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(3.dp)
-                        ) {
-                            Text(
-                                text = jamaahFormatted,
-                                style = MaterialTheme.typography.labelMedium,
-                                fontSize = if (isTightSpace) 11.sp else 11.5.sp,
-                                color = ElegantGold,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                softWrap = false
+                            .weight(1f)
+                            .padding(horizontal = 12.dp)
+                            .height(1.dp)
+                            .background(
+                                when {
+                                    isHighlighted -> ElegantGold.copy(alpha = 0.5f)
+                                    prayer.isPrayed -> EmeraldCompleted.copy(alpha = 0.4f)
+                                    isMissedQada -> CoralAlert.copy(alpha = 0.45f)
+                                    else -> SlateStrokeBorder.copy(alpha = 0.85f)
+                                }
                             )
-                            Icon(
-                                imageVector = Icons.Filled.Edit,
-                                contentDescription = "Edit times",
-                                tint = ElegantGold,
-                                modifier = Modifier.size(if (isTightSpace) 10.dp else 11.dp)
-                            )
-                        }
-                    }
+                    )
 
-                    // Completion Check Button (Locked until Jama'ah time arrives)
-                    val isLockedBeforeJamaah = !prayer.isPrayed && !prayer.canMarkPrayed
-                    IconButton(
-                        onClick = onToggleCompleted,
-                        modifier = Modifier
-                            .size(if (isTightSpace) 34.dp else 38.dp)
-                            .testTag("toggle_prayer_${prayer.id.lowercase()}")
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(if (isTightSpace) 25.dp else 28.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    when {
-                                        prayer.isPrayed -> EmeraldCompleted
-                                        isLockedBeforeJamaah -> DeepSlateDarker.copy(alpha = 0.7f)
-                                        isMissedQada -> CoralAlert.copy(alpha = 0.25f)
-                                        else -> EmeraldContainer.copy(alpha = 0.35f)
-                                    }
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = if (isLockedBeforeJamaah) Icons.Outlined.Lock else Icons.Filled.Check,
-                                contentDescription = when {
-                                    prayer.isPrayed -> "${prayer.nameEnglish} completed"
-                                    isLockedBeforeJamaah -> "${prayer.nameEnglish} unlocks at Jama'ah time ($jamaahFormatted)"
-                                    else -> "Mark ${prayer.nameEnglish} as completed"
-                                },
-                                tint = when {
-                                    prayer.isPrayed -> DeepSlateBlue
-                                    isLockedBeforeJamaah -> MutedPeriwinkle.copy(alpha = 0.35f)
-                                    else -> MutedPeriwinkle.copy(alpha = 0.7f)
-                                },
-                                modifier = Modifier.size(if (isLockedBeforeJamaah) 13.dp else 15.dp)
-                            )
-                        }
-                    }
+                    Text(
+                        text = endFormatted,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontSize = if (isTightSpace) 12.5.sp else 13.5.sp,
+                        color = if (isHighlighted) ElegantGold else CrispOffWhite.copy(alpha = 0.9f),
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        softWrap = false
+                    )
                 }
             }
         }

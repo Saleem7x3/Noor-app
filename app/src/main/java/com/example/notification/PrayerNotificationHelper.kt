@@ -16,11 +16,33 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.example.MainActivity
 import com.example.R
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import java.util.Locale
 
 object PrayerNotificationHelper {
     const val CHANNEL_ID = "noor_prayer_soft_chime_channel"
     const val URGENT_CHANNEL_ID = "noor_prayer_urgent_end_channel"
     const val NOTIFICATION_ID = 1001
+
+    private val animationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var activeSweepJob: Job? = null
+
+    fun formatElapsedSecondsOrHours(totalSeconds: Int): String {
+        val clamped = totalSeconds.coerceAtLeast(0)
+        val hours = clamped / 3600
+        val mins = (clamped % 3600) / 60
+        val secs = clamped % 60
+        return if (hours > 0) {
+            String.format(Locale.US, "%dh %02dm", hours, mins)
+        } else {
+            String.format(Locale.US, "%dm %02ds", mins, secs)
+        }
+    }
 
     fun ensureChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -36,7 +58,7 @@ object PrayerNotificationHelper {
                 "Prayer PST, Adhan & Jama'ah Alerts",
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
-                description = "PST start alerts, Adhan countdowns, and post-Jama'ah repeat reminders"
+                description = "PST start alerts, Adhan countdowns, Jama'ah alerts, and post-Jama'ah repeat reminders"
                 enableVibration(true)
                 setSound(chimeUri, audioAttributes)
             }
@@ -46,7 +68,7 @@ object PrayerNotificationHelper {
                 "Urgent End-of-Prayer Window Warnings",
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
-                description = "High-urgency warnings when prayer time is close to ending"
+                description = "High-urgency warnings 15 minutes before prayer time ends"
                 enableVibration(true)
                 vibrationPattern = longArrayOf(0, 400, 200, 400, 200, 600)
                 setSound(alarmUri, audioAttributes)
@@ -74,7 +96,9 @@ object PrayerNotificationHelper {
         preJamaahAlertMinutes: Int = 15,
         progressPercent: Int = 50,
         nagIteration: Int = 0,
-        isOngoingForeground: Boolean = false
+        isOngoingForeground: Boolean = false,
+        onlyAlertOnce: Boolean = false,
+        customSubTextSuffix: String? = null
     ): Notification {
         ensureChannel(context)
 
@@ -88,7 +112,7 @@ object PrayerNotificationHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // Action 1: Mark as Prayed
+        // Primary Action: Mark as Prayed (Snooze removed per user design)
         val markPrayedIntent = Intent(context, PrayerAlarmReceiver::class.java).apply {
             action = ExactPrayerAlarmScheduler.ACTION_MARK_PRAYED
             putExtra(ExactPrayerAlarmScheduler.EXTRA_PRAYER_ID, prayerId)
@@ -102,33 +126,7 @@ object PrayerNotificationHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // Action 2: Snooze 5m (ONLY allowed starting from Pre-Jama'ah reminder or after Jama'ah)
-        val canShowSnooze = when (triggerType) {
-            AlarmTriggerType.STAGE_1_PST_START,
-            AlarmTriggerType.STAGE_PRE_ADHAN -> false
-            AlarmTriggerType.STAGE_2_ADHAN_COUNTDOWN -> minutesUntilJamaah <= preJamaahAlertMinutes
-            AlarmTriggerType.STAGE_PRE_JAMAAH,
-            AlarmTriggerType.STAGE_3_POST_JAMAAH_NAG,
-            AlarmTriggerType.STAGE_4_URGENT_END_OF_WINDOW -> true
-        }
-
-        val snoozeIntent = Intent(context, PrayerAlarmReceiver::class.java).apply {
-            action = ExactPrayerAlarmScheduler.ACTION_SNOOZE_5M
-            putExtra(ExactPrayerAlarmScheduler.EXTRA_PRAYER_ID, prayerId)
-            putExtra(ExactPrayerAlarmScheduler.EXTRA_PRAYER_NAME, prayerName)
-            putExtra(ExactPrayerAlarmScheduler.EXTRA_DATE_ISO, dateIso)
-            putExtra(ExactPrayerAlarmScheduler.EXTRA_PST_TIME, pstTimeFormatted)
-            putExtra(ExactPrayerAlarmScheduler.EXTRA_ADHAN_TIME, adhanTimeFormatted)
-            putExtra(ExactPrayerAlarmScheduler.EXTRA_JAMAAH_TIME, jamaahTimeFormatted)
-        }
-        val snoozePi = PendingIntent.getBroadcast(
-            context,
-            prayerId.hashCode() + 102,
-            snoozeIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        // Action 3: Dismiss
+        // Secondary Action: Dismiss
         val dismissIntent = Intent(context, PrayerAlarmReceiver::class.java).apply {
             action = ExactPrayerAlarmScheduler.ACTION_DISMISS_NAG
             putExtra(ExactPrayerAlarmScheduler.EXTRA_PRAYER_ID, prayerId)
@@ -143,24 +141,25 @@ object PrayerNotificationHelper {
         )
 
         val pstDisplay = pstTimeFormatted.ifBlank { adhanTimeFormatted }
+        val clampedPct = progressPercent.coerceIn(1, 100)
 
         val titleText: String
         val bodyText: String
-        val subText: String
+        val baseSubText: String
         val channelToUse: String
 
         when (triggerType) {
             AlarmTriggerType.STAGE_1_PST_START -> {
                 titleText = "$prayerName Prayer Time Started ($pstDisplay)"
                 bodyText = "Adhan at $adhanTimeFormatted  •  Jama'ah at $jamaahTimeFormatted"
-                subText = "Prayer Start Time"
+                baseSubText = "Prayer Start Time"
                 channelToUse = CHANNEL_ID
             }
 
             AlarmTriggerType.STAGE_PRE_ADHAN -> {
                 titleText = "$prayerName Adhan Soon ($adhanTimeFormatted)"
                 bodyText = "Mosque Adhan at $adhanTimeFormatted  •  Jama'ah at $jamaahTimeFormatted"
-                subText = "Pre-Adhan Reminder"
+                baseSubText = "Pre-Adhan Reminder"
                 channelToUse = CHANNEL_ID
             }
 
@@ -168,7 +167,7 @@ object PrayerNotificationHelper {
                 val minsToJamaah = minutesUntilJamaah.coerceAtLeast(1)
                 titleText = "$prayerName Adhan • Jama'ah in $minsToJamaah min"
                 bodyText = "Adhan $adhanTimeFormatted  •  Jama'ah $jamaahTimeFormatted"
-                subText = "Adhan Call"
+                baseSubText = "Adhan Call"
                 channelToUse = CHANNEL_ID
             }
 
@@ -176,34 +175,38 @@ object PrayerNotificationHelper {
                 val minsToJamaah = minutesUntilJamaah.coerceAtLeast(1)
                 titleText = "$prayerName Jama'ah in $minsToJamaah min ($jamaahTimeFormatted)"
                 bodyText = "Prepare for $prayerName Jama'ah  •  Jama'ah at $jamaahTimeFormatted"
-                subText = "Pre-Jama'ah Reminder"
+                baseSubText = "Pre-Jama'ah Reminder"
+                channelToUse = CHANNEL_ID
+            }
+
+            AlarmTriggerType.STAGE_JAMAAH_START -> {
+                titleText = "$prayerName Jama'ah Time ($jamaahTimeFormatted)"
+                bodyText = "Jama'ah congregation for $prayerName has started  •  Mark as Prayed when done"
+                baseSubText = "Jama'ah Started"
                 channelToUse = CHANNEL_ID
             }
 
             AlarmTriggerType.STAGE_3_POST_JAMAAH_NAG -> {
                 val passedMin = minutesPassedSinceJamaah.coerceAtLeast(1)
-                titleText = "$prayerName not prayed • $passedMin mins elapsed since Jama'ah"
+                val passedFormatted = formatElapsedSecondsOrHours(passedMin * 60)
+                titleText = "$prayerName not prayed • $passedFormatted elapsed since Jama'ah"
                 bodyText = "Jama'ah was $jamaahTimeFormatted  •  Please pray $prayerName (${minutesRemainingUntilEnd.coerceAtLeast(1)}m left)"
-                subText = "Every ${repeatIntervalMinutes}m Reminder"
+                baseSubText = "Every ${repeatIntervalMinutes}m Reminder"
                 channelToUse = CHANNEL_ID
             }
 
             AlarmTriggerType.STAGE_4_URGENT_END_OF_WINDOW -> {
                 val remMin = minutesRemainingUntilEnd.coerceAtLeast(1)
                 val passedMin = minutesPassedSinceJamaah.coerceAtLeast(1)
+                val passedFormatted = formatElapsedSecondsOrHours(passedMin * 60)
                 titleText = "URGENT: $remMin min left until $prayerName ends!"
-                bodyText = "$prayerName not prayed ($passedMin mins elapsed since Jama'ah) • Pray now"
-                subText = "Urgent End-of-Prayer Warning"
+                bodyText = "$prayerName not prayed ($passedFormatted elapsed since Jama'ah) • Pray now"
+                baseSubText = "Urgent 15m End Warning"
                 channelToUse = URGENT_CHANNEL_ID
             }
         }
 
-        // Only allow marking as prayed once Jama'ah time has been reached/passed
-        val canShowMarkPrayed = when (triggerType) {
-            AlarmTriggerType.STAGE_3_POST_JAMAAH_NAG,
-            AlarmTriggerType.STAGE_4_URGENT_END_OF_WINDOW -> true
-            else -> minutesUntilJamaah <= 0
-        }
+        val resolvedSubText = customSubTextSuffix ?: String.format(Locale.US, "%s • %d%% loaded", baseSubText, clampedPct)
 
         val chimeUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
         val builder = NotificationCompat.Builder(context, channelToUse)
@@ -211,9 +214,10 @@ object PrayerNotificationHelper {
             .setContentTitle(titleText)
             .setContentText(bodyText)
             .setStyle(NotificationCompat.BigTextStyle().bigText(bodyText))
-            .setSubText(subText)
-            .setProgress(100, progressPercent.coerceIn(0, 100), false)
+            .setSubText(resolvedSubText)
+            .setProgress(100, clampedPct, false)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setOnlyAlertOnce(onlyAlertOnce)
             .setCategory(
                 if (triggerType == AlarmTriggerType.STAGE_4_URGENT_END_OF_WINDOW) {
                     NotificationCompat.CATEGORY_ALARM
@@ -226,14 +230,8 @@ object PrayerNotificationHelper {
             .setOngoing(isOngoingForeground)
             .setAutoCancel(!isOngoingForeground)
 
-        if (canShowMarkPrayed) {
-            builder.addAction(0, context.getString(R.string.mark_as_prayed), markPrayedPi)
-        }
-
-        if (canShowSnooze) {
-            builder.addAction(0, context.getString(R.string.snooze_5m), snoozePi)
-        }
-
+        // Prayer completion unlocks as soon as Prayer Start Time begins -> always include Mark as Prayed
+        builder.addAction(0, context.getString(R.string.mark_as_prayed), markPrayedPi)
         builder.addAction(0, "Dismiss", dismissPi)
         return builder.build()
     }
@@ -252,6 +250,11 @@ object PrayerNotificationHelper {
         return true
     }
 
+    /**
+     * Posts the notification with a Discord-ping style fast-loading bar animation (~2.4 seconds)
+     * that sweeps from 18% -> 52% -> 86% -> 100% and then hangs persistently in the notification
+     * shade displaying the actual elapsed percentage (X% loaded).
+     */
     fun showDynamicPrayerNotification(
         context: Context,
         prayerName: String,
@@ -269,8 +272,12 @@ object PrayerNotificationHelper {
         dateIso: String = "",
         nagIteration: Int = 0
     ): Boolean {
-        val notification = buildRichPrayerNotification(
-            context = context,
+        val appCtx = context.applicationContext
+        val targetElapsedPct = progressPercent.coerceIn(4, 100)
+
+        // Initial ping frame (alerts once with sound/vibration, starts fast loading sweep at 18%)
+        val initialNotification = buildRichPrayerNotification(
+            context = appCtx,
             prayerId = prayerId,
             prayerName = prayerName,
             dateIso = dateIso,
@@ -283,14 +290,74 @@ object PrayerNotificationHelper {
             minutesRemainingUntilEnd = minutesRemainingUntilEnd,
             repeatIntervalMinutes = repeatIntervalMinutes,
             preJamaahAlertMinutes = preJamaahAlertMinutes,
-            progressPercent = progressPercent,
+            progressPercent = 18,
             nagIteration = nagIteration,
-            isOngoingForeground = nagIteration > 0
+            isOngoingForeground = true,
+            onlyAlertOnce = false,
+            customSubTextSuffix = "Syncing prayer timer • 18%"
         )
-        return postNotificationIfPermitted(context, notification)
+
+        val posted = postNotificationIfPermitted(appCtx, initialNotification)
+        if (!posted) return false
+
+        activeSweepJob?.cancel()
+        activeSweepJob = animationScope.launch {
+            val fastSweepFrames = listOf(52, 86, 100)
+            for (sweepPct in fastSweepFrames) {
+                delay(550L)
+                val sweepNotif = buildRichPrayerNotification(
+                    context = appCtx,
+                    prayerId = prayerId,
+                    prayerName = prayerName,
+                    dateIso = dateIso,
+                    pstTimeFormatted = pstTimeFormatted,
+                    adhanTimeFormatted = adhanTimeFormatted,
+                    jamaahTimeFormatted = jamaahTimeFormatted,
+                    triggerType = triggerType,
+                    minutesUntilJamaah = minutesUntilJamaah,
+                    minutesPassedSinceJamaah = minutesPassedSinceJamaah,
+                    minutesRemainingUntilEnd = minutesRemainingUntilEnd,
+                    repeatIntervalMinutes = repeatIntervalMinutes,
+                    preJamaahAlertMinutes = preJamaahAlertMinutes,
+                    progressPercent = sweepPct,
+                    nagIteration = nagIteration,
+                    isOngoingForeground = true,
+                    onlyAlertOnce = true,
+                    customSubTextSuffix = "Syncing prayer timer • $sweepPct%"
+                )
+                postNotificationIfPermitted(appCtx, sweepNotif)
+            }
+
+            // Settle after ~2.2s onto the persistent notification showing actual elapsed X% loaded
+            delay(550L)
+            val settledNotif = buildRichPrayerNotification(
+                context = appCtx,
+                prayerId = prayerId,
+                prayerName = prayerName,
+                dateIso = dateIso,
+                pstTimeFormatted = pstTimeFormatted,
+                adhanTimeFormatted = adhanTimeFormatted,
+                jamaahTimeFormatted = jamaahTimeFormatted,
+                triggerType = triggerType,
+                minutesUntilJamaah = minutesUntilJamaah,
+                minutesPassedSinceJamaah = minutesPassedSinceJamaah,
+                minutesRemainingUntilEnd = minutesRemainingUntilEnd,
+                repeatIntervalMinutes = repeatIntervalMinutes,
+                preJamaahAlertMinutes = preJamaahAlertMinutes,
+                progressPercent = targetElapsedPct,
+                nagIteration = nagIteration,
+                isOngoingForeground = true,
+                onlyAlertOnce = true,
+                customSubTextSuffix = null
+            )
+            postNotificationIfPermitted(appCtx, settledNotif)
+        }
+
+        return true
     }
 
     fun cancelNotification(context: Context) {
+        activeSweepJob?.cancel()
         NotificationManagerCompat.from(context).cancel(NOTIFICATION_ID)
     }
 }

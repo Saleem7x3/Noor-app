@@ -60,7 +60,7 @@ class PrayerRepository(private val prayerDao: PrayerDao) {
                     preAdhanAlertMinutes = 5,
                     preJamaahAlertMinutes = 15,
                     nagIntervalMinutes = 10,
-                    urgentEndWindowMinutes = 30,
+                    urgentEndWindowMinutes = 15,
                     autoQadaOnNextPrayer = true,
                     firstLaunchEpochMs = nowEpochMs
                 )
@@ -312,17 +312,18 @@ class PrayerRepository(private val prayerDao: PrayerDao) {
     suspend fun togglePrayerCompletion(dateIso: String, prayerId: String, currentlyPrayed: Boolean) {
         val existing = prayerDao.getPrayerRecordSync(dateIso, prayerId)
         val nextPrayed = !currentlyPrayed
+        val wasQada = existing?.completionStatus == PrayerCompletionStatus.MISSED_QADA.name
         prayerDao.upsertPrayerRecord(
             PrayerRecordEntity(
                 dateIso = dateIso,
                 prayerId = prayerId,
                 isPrayed = nextPrayed,
-                isInJamaah = true,
+                isInJamaah = !wasQada,
                 completedAtMillis = if (nextPrayed) System.currentTimeMillis() else 0L,
-                completionStatus = if (nextPrayed) {
-                    PrayerCompletionStatus.PRAYED_ON_TIME.name
-                } else {
-                    PrayerCompletionStatus.PENDING.name
+                completionStatus = when {
+                    nextPrayed && wasQada -> PrayerCompletionStatus.PRAYED_LATE.name
+                    nextPrayed -> PrayerCompletionStatus.PRAYED_ON_TIME.name
+                    else -> PrayerCompletionStatus.PENDING.name
                 },
                 nagCountTriggered = existing?.nagCountTriggered ?: 0
             )
@@ -331,14 +332,19 @@ class PrayerRepository(private val prayerDao: PrayerDao) {
 
     suspend fun markPrayerCompleted(dateIso: String, prayerId: String) {
         val existing = prayerDao.getPrayerRecordSync(dateIso, prayerId)
+        val wasQada = existing?.completionStatus == PrayerCompletionStatus.MISSED_QADA.name
         prayerDao.upsertPrayerRecord(
             PrayerRecordEntity(
                 dateIso = dateIso,
                 prayerId = prayerId,
                 isPrayed = true,
-                isInJamaah = true,
+                isInJamaah = !wasQada,
                 completedAtMillis = System.currentTimeMillis(),
-                completionStatus = PrayerCompletionStatus.PRAYED_ON_TIME.name,
+                completionStatus = if (wasQada) {
+                    PrayerCompletionStatus.PRAYED_LATE.name
+                } else {
+                    PrayerCompletionStatus.PRAYED_ON_TIME.name
+                },
                 nagCountTriggered = existing?.nagCountTriggered ?: 0
             )
         )
@@ -403,7 +409,7 @@ class PrayerRepository(private val prayerDao: PrayerDao) {
 
     suspend fun updateNotificationIntervals(
         nagIntervalMinutes: Int,
-        urgentEndWindowMinutes: Int = 30,
+        urgentEndWindowMinutes: Int = 15,
         preAdhanAlertMinutes: Int? = null,
         preJamaahAlertMinutes: Int? = null
     ) {
@@ -413,7 +419,7 @@ class PrayerRepository(private val prayerDao: PrayerDao) {
                 preAdhanAlertMinutes = (preAdhanAlertMinutes ?: current.preAdhanAlertMinutes).coerceIn(0, 30),
                 preJamaahAlertMinutes = (preJamaahAlertMinutes ?: current.preJamaahAlertMinutes).coerceIn(5, 45),
                 nagIntervalMinutes = nagIntervalMinutes.coerceIn(5, 60),
-                urgentEndWindowMinutes = urgentEndWindowMinutes.coerceIn(10, 60)
+                urgentEndWindowMinutes = urgentEndWindowMinutes.coerceIn(5, 60)
             )
         )
     }

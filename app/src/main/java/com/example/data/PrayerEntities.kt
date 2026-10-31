@@ -55,7 +55,7 @@ data class UserPreferencesEntity(
     @ColumnInfo(name = "pre_adhan_alert_minutes") val preAdhanAlertMinutes: Int = 5,
     @ColumnInfo(name = "pre_jamaah_alert_minutes") val preJamaahAlertMinutes: Int = 15,
     @ColumnInfo(name = "nag_interval_minutes") val nagIntervalMinutes: Int = 10, // Configurable periodic repeat interval (default 10m) after +10m post-Jama'ah
-    @ColumnInfo(name = "urgent_end_window_minutes") val urgentEndWindowMinutes: Int = 30, // Z mins remaining urgent threshold
+    @ColumnInfo(name = "urgent_end_window_minutes") val urgentEndWindowMinutes: Int = 15, // 15 mins before prayer window ends urgent warning
     @ColumnInfo(name = "auto_qada_on_next_prayer") val autoQadaOnNextPrayer: Boolean = true,
     @ColumnInfo(name = "first_launch_epoch_ms") val firstLaunchEpochMs: Long = 0L
 )

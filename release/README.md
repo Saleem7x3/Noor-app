@@ -2,17 +2,9 @@
 
 - **APK File**: `/release/app-debug.apk`
 - **Package ID**: `com.aistudio.noorprayer.qmzrxk`
-- **Included Features**:
-  - **4-Phase Hero Card Progression**:
-    1. **Waiting for Next Prayer (PST)**: Displays `ADHAN TIME` on the left and `"Next prayer in Xm Ys"` on the right.
-    2. **Prayer Time Started (PST reached, before Adhan)**: Displays `ADHAN TIME` on the left and `"Adhan in Xm Ys"` on the right.
-    3. **Adhan Time Done (waiting for Jama'ah)**: Displays `ADHAN TIME` on the left and `"Jama'ah in Xm Ys"` on the right.
-    4. **10+ Minutes After Jama'ah (if unticked)**: Switches the left label to `JAMA'AH TIME` (showing the Jama'ah clock time) and displays `"X mins elapsed since Jama'ah"` on the right.
-  - **Compact Daily Prayer Rows**: Displays only the status dot, Prayer Name, tappable **Adhan** and **Jama'ah** pills, and the completion checkmark (with PST shown in the tap-to-edit dialog).
-  - **Snooze Gating**: **Snooze 5m** is hidden prior to the Pre-Jama'ah reminder threshold (default `15m` before Jama'ah) and unlocks only once that reminder window is reached.
-  - **Settings Tab & Real-Time Notifications**: Clean **Settings** tab for configuring Pre-Adhan (`5m` default), Pre-Jama'ah (`15m` default), Post-Jama'ah periodic reminders (starting `+10m` after Jama'ah and repeating every `10m` by default), and Urgent End-of-Window warnings (`30m` default).
-
-## How to Download from AI Studio
-1. Open the **File Explorer** panel in the left sidebar of the AI Studio code editor.
-2. Expand the **`release`** folder at the root of the workspace.
-3. Right-click **`app-debug.apk`** and select **Download**.
+- **Included Updates**:
+  - **Hero Card Bottom Cluster Alignment**: Pushed the bottom-left (`Prayer Name + Arabic + Time`) and bottom-right (`Jama'ah Pill + Countdown/Elapsed`) cluster vertically down to sit cleanly over the glowing bottom wave.
+  - **Expanded 2-Row Daily Prayer Cards**: Each of the 5 daily prayers (`Fajr`, `Jumu'ah`/`Dhuhr`, `Asr`, `Maghrib`, `Isha`) now expands vertically with the icon, English/Arabic name, stacked `Adhan`/`Jama'ah` pills, and check button on the top row, and `Start Time ───────── End Time` across the bottom row (matching the solar warning cards).
+  - **Stage-Specific Lock & Alert Time Line**: Displays only the active stage time (`Starts at <PST>`, `Adhan <Time>`, `Jama'ah <Time>`, or `Ends at <Time>` after Jama'ah).
+  - **Dynamic Duration Formatting**: Displays `Xm Ys` (minutes and seconds) when under 60 minutes and `Xh Ym` (hours and minutes) when 60 minutes or longer across all elapsed and countdown timers.
+  - **Standard Display Size Fit**: Top bilingual day pill (`Friday • السبت`), prayer titles (`Jumu'ah الجمعة`), and bottom navigation labels (`Lock & Alert`) fit without truncation on Standard display size.

@@ -58,18 +58,6 @@ class PrayerAlarmReceiver : BroadcastReceiver() {
                 when (action) {
                     ExactPrayerAlarmScheduler.ACTION_MARK_PRAYED -> {
                         val nowMarkMs = System.currentTimeMillis()
-                        if (jamaahEpochMs > 0L && nowMarkMs < jamaahEpochMs) {
-                            alarmDataStore.recordTriggerActivated(
-                                prayerId = prayerId,
-                                dateIso = todayIso,
-                                triggerStage = "LOCKED_BEFORE_JAMAAH",
-                                nagIteration = 0,
-                                nextAlarmEpochMs = jamaahEpochMs + (10 * 60_000L),
-                                foregroundActive = false,
-                                eventDescription = "$prayerName cannot be marked as prayed before Jama'ah ($jamaahTime)"
-                            )
-                            return@launch
-                        }
                         val existing = dao.getPrayerRecordSync(todayIso, prayerId)
                         dao.upsertPrayerRecord(
                             PrayerRecordEntity(
@@ -91,38 +79,9 @@ class PrayerAlarmReceiver : BroadcastReceiver() {
                     }
 
                     ExactPrayerAlarmScheduler.ACTION_SNOOZE_5M -> {
-                        val nextEpoch = System.currentTimeMillis() + (5 * 60 * 1000L)
-                        val snoozedStage = if (jamaahEpochMs > 0L && nextEpoch < jamaahEpochMs) {
-                            AlarmTriggerType.STAGE_PRE_JAMAAH
-                        } else {
-                            AlarmTriggerType.STAGE_3_POST_JAMAAH_NAG
-                        }
-                        val minUntilJamaahAtSnooze = if (jamaahEpochMs > nextEpoch) {
-                            ((jamaahEpochMs - nextEpoch + 59_999L) / 60_000L).toInt().coerceAtLeast(1)
-                        } else {
-                            0
-                        }
-                        scheduler.scheduleExactTrigger(
-                            prayerId = prayerId,
-                            prayerName = prayerName,
-                            dateIso = todayIso,
-                            triggerType = snoozedStage,
-                            triggerAtEpochMillis = nextEpoch,
-                            pstTimeFormatted = pstTime,
-                            adhanTimeFormatted = adhanTime,
-                            jamaahTimeFormatted = jamaahTime,
-                            pstEpochMillis = pstEpochMs,
-                            adhanEpochMillis = adhanEpochMs,
-                            jamaahEpochMillis = jamaahEpochMs,
-                            windowEndEpochMillis = windowEndEpochMs,
-                            minutesUntilJamaah = minUntilJamaahAtSnooze,
-                            nagIteration = 1
-                        )
+                        // Dismiss/silence if snooze action received
+                        scheduler.cancelAllAlarmsForPrayer(prayerId)
                         PrayerNaggingForegroundService.stopNaggingLoop(context)
-                        alarmDataStore.recordSnoozeFiveMinutes(
-                            prayerId = prayerId,
-                            nextAlarmEpochMs = nextEpoch
-                        )
                     }
 
                     ExactPrayerAlarmScheduler.ACTION_DISMISS_NAG -> {
@@ -145,7 +104,7 @@ class PrayerAlarmReceiver : BroadcastReceiver() {
                         val preAdhanMin = (prefs?.preAdhanAlertMinutes ?: 5).coerceIn(0, 30)
                         val preJamaahMin = (prefs?.preJamaahAlertMinutes ?: 15).coerceIn(5, 45)
                         val nagIntervalMin = (prefs?.nagIntervalMinutes ?: 10).coerceIn(5, 60)
-                        val urgentThresholdMin = (prefs?.urgentEndWindowMinutes ?: 30).coerceIn(10, 60)
+                        val urgentThresholdMin = (prefs?.urgentEndWindowMinutes ?: 15).coerceIn(5, 60)
                         val firstLaunchEpochMs = prefs?.firstLaunchEpochMs ?: 0L
 
                         // 1. If prayer is already marked as Prayed in Room, cancel all alarms & stop notification
@@ -230,7 +189,14 @@ class PrayerAlarmReceiver : BroadcastReceiver() {
                                 if (preJamaahMin > 0 && preJamaahEpoch > effectiveAdhanEpoch) {
                                     add(AlarmTriggerType.STAGE_PRE_JAMAAH to preJamaahEpoch)
                                 }
+                                if (effectiveJamaahEpoch > effectiveAdhanEpoch) {
+                                    add(AlarmTriggerType.STAGE_JAMAAH_START to effectiveJamaahEpoch)
+                                }
                                 add(AlarmTriggerType.STAGE_3_POST_JAMAAH_NAG to firstPostJamaahEpoch)
+                                val urgentEpoch = effectiveEndEpoch - (15 * 60_000L)
+                                if (urgentEpoch > effectiveJamaahEpoch) {
+                                    add(AlarmTriggerType.STAGE_4_URGENT_END_OF_WINDOW to urgentEpoch)
+                                }
                             }.sortedBy { it.second }
 
                             return milestones.firstOrNull { it.second > referenceMs + 20_000L && it.second < effectiveEndEpoch }
@@ -240,7 +206,8 @@ class PrayerAlarmReceiver : BroadcastReceiver() {
                             AlarmTriggerType.STAGE_1_PST_START,
                             AlarmTriggerType.STAGE_PRE_ADHAN,
                             AlarmTriggerType.STAGE_2_ADHAN_COUNTDOWN,
-                            AlarmTriggerType.STAGE_PRE_JAMAAH -> {
+                            AlarmTriggerType.STAGE_PRE_JAMAAH,
+                            AlarmTriggerType.STAGE_JAMAAH_START -> {
                                 if (triggerType == AlarmTriggerType.STAGE_1_PST_START) {
                                     val previousPrayerId = getPreviousPrayerId(prayerId)
                                     if (previousPrayerId != null && (prefs?.autoQadaOnNextPrayer != false) && nowMs > firstLaunchEpochMs) {
@@ -285,11 +252,14 @@ class PrayerAlarmReceiver : BroadcastReceiver() {
                                     triggerType
                                 }
 
-                                val notification = PrayerNotificationHelper.buildRichPrayerNotification(
+                                val effectiveStartEpoch = if (pstEpochMs > 0L) pstEpochMs else effectiveAdhanEpoch
+                                val totalWinMs = (effectiveEndEpoch - effectiveStartEpoch).coerceAtLeast(60_000L)
+                                val elapsedWinMs = (nowMs - effectiveStartEpoch).coerceAtLeast(0L)
+                                val actualWindowPct = ((elapsedWinMs * 100L) / totalWinMs).toInt().coerceIn(5, 100)
+
+                                PrayerNotificationHelper.showDynamicPrayerNotification(
                                     context = context,
-                                    prayerId = prayerId,
                                     prayerName = prayerName,
-                                    dateIso = todayIso,
                                     pstTimeFormatted = pstTime,
                                     adhanTimeFormatted = adhanTime,
                                     jamaahTimeFormatted = jamaahTime,
@@ -299,16 +269,11 @@ class PrayerAlarmReceiver : BroadcastReceiver() {
                                     minutesRemainingUntilEnd = minRemainingUntilEnd,
                                     repeatIntervalMinutes = nagIntervalMin,
                                     preJamaahAlertMinutes = preJamaahMin,
-                                    progressPercent = when (displayStage) {
-                                        AlarmTriggerType.STAGE_1_PST_START -> 15
-                                        AlarmTriggerType.STAGE_PRE_ADHAN -> 25
-                                        AlarmTriggerType.STAGE_2_ADHAN_COUNTDOWN -> 40
-                                        else -> 55
-                                    },
-                                    nagIteration = 0,
-                                    isOngoingForeground = false
+                                    progressPercent = actualWindowPct,
+                                    prayerId = prayerId,
+                                    dateIso = todayIso,
+                                    nagIteration = 0
                                 )
-                                PrayerNotificationHelper.postNotificationIfPermitted(context, notification)
 
                                 alarmDataStore.recordTriggerActivated(
                                     prayerId = prayerId,
@@ -400,7 +365,9 @@ class PrayerAlarmReceiver : BroadcastReceiver() {
                                 val stageDesc = if (isUrgentWindow) {
                                     "URGENT ($prayerName): ${minRemainingUntilEnd}m remaining until prayer time ends!"
                                 } else {
-                                    "$prayerName unprayed: ${minPassedSinceJamaah.coerceAtLeast(1)} mins elapsed since Jama'ah • Repeating every ${nagIntervalMin}m"
+                                    val elapsedSec = ((nowMs - effectiveJamaahEpoch) / 1000L).toInt().coerceAtLeast(60)
+                                    val elapsedStr = PrayerNotificationHelper.formatElapsedSecondsOrHours(elapsedSec)
+                                    "$prayerName unprayed: $elapsedStr elapsed since Jama'ah • Repeating every ${nagIntervalMin}m"
                                 }
 
                                 alarmDataStore.recordTriggerActivated(

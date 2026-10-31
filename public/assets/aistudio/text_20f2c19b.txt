@@ -1,0 +1,8 @@
+push the bottom layout (right and left) vertically down, so that theyre more close to bottom
+
+secondly expand the daily prayer vertically and move the praher start time and end time there to the bottom woth a linr ----- as you have for sunrise sunset etc.
+also look at the starts at • adhan • jama'ah in screen one
+
+i want it to show only starts at x when its not started yet but the prev prayer is marked, and it should show only adhan x when the prayer time has started, and only jama'ah x when the adhan has passed
+
+also the x mins elapsed should not only be mins but also mins and seconds if it is more than 60 mins then it should be hrs and minutes, make this change throughout

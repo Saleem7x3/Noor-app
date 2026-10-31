@@ -78,6 +78,7 @@ data class PrayerDashboardUiState(
     val islamicMidnightFormatted: String = "11:28 PM",
     val prayers: List<PrayerItemUiModel> = emptyList(),
     val solarWarnings: List<SolarWarningItemUiModel> = emptyList(),
+    val heroSolarBadgeText: String = "Shuruq 06:12 AM",
     val featuredPrayer: PrayerItemUiModel? = null,
     val isFeaturedPrayerActiveWindow: Boolean = true,
     val isJamaahTimePassed: Boolean = false,
@@ -93,6 +94,8 @@ data class PrayerDashboardUiState(
     val primaryRightTimerText: String = "Next prayer in 24m 00s",
     val progressLeftLabelText: String = "Time remaining until Asr",
     val progressRightLabelText: String = "35% elapsed",
+    val lockScreenStageTimeText: String = "Starts at 03:39 PM",
+    val elapsedSinceJamaahFormatted: String = "0m 00s",
     val prayerWindowEndTimeFormatted: String = "05:56 PM",
     val minutesElapsedSinceJamaah: Int = 0,
     val minutesRemainingUntilPrayerEnds: Int = 60,
@@ -102,7 +105,7 @@ data class PrayerDashboardUiState(
     val preAdhanAlertMinutes: Int = 5,
     val preJamaahAlertMinutes: Int = 15,
     val nagIntervalMinutes: Int = 10,
-    val urgentEndWindowMinutes: Int = 30,
+    val urgentEndWindowMinutes: Int = 15,
     val isSnoozeEnabled: Boolean = false,
     val notificationProgressFraction: Float = 0.35f,
     val alarmRuntimeState: AlarmLoopRuntimeState = AlarmLoopRuntimeState(),
@@ -300,7 +303,7 @@ class PrayerHabitViewModel(
         val mins = (clamped % 3600) / 60
         val secs = clamped % 60
         return if (hours > 0) {
-            String.format(Locale.US, "%dh %02dm %02ds", hours, mins, secs)
+            String.format(Locale.US, "%dh %02dm", hours, mins)
         } else {
             String.format(Locale.US, "%dm %02ds", mins, secs)
         }
@@ -341,6 +344,7 @@ class PrayerHabitViewModel(
         val dateFormatter = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { timeZone = cityTz }
         val displayDateFormatter = SimpleDateFormat("EEE, MMM d, yyyy", Locale.US).apply { timeZone = cityTz }
         val dayAndDateFormatter = SimpleDateFormat("EEEE, d MMM", Locale.US).apply { timeZone = cityTz }
+        val englishDayFormatter = SimpleDateFormat("EEEE", Locale.US).apply { timeZone = cityTz }
         val clockTimeFormatter = SimpleDateFormat("hh:mm a", Locale.US).apply { timeZone = cityTz }
 
         val effectiveDateIso = dateFormatter.format(activeSheetCal.time)
@@ -356,6 +360,34 @@ class PrayerHabitViewModel(
         // Strict Islamic Midnight (midpoint between Maghrib and Fajr, e.g., 1408 = 11:28 PM)
         val islamicMidnightMin = calcTimes.islamicMidnightMinutes
         val islamicMidnightFormatted = PrayerTimeCalculator.formatMinutesTo12Hour(islamicMidnightMin)
+
+        // Bilingual Day Pill: English day advances at midnight 12:00 AM, while Arabic day advances at Maghrib
+        val englishDayName = englishDayFormatter.format(nowCal.time)
+        val arabicDays = mapOf(
+            Calendar.SUNDAY to "الأحد",
+            Calendar.MONDAY to "الإثنين",
+            Calendar.TUESDAY to "الثلاثاء",
+            Calendar.WEDNESDAY to "الأربعاء",
+            Calendar.THURSDAY to "الخميس",
+            Calendar.FRIDAY to "الجمعة",
+            Calendar.SATURDAY to "السبت"
+        )
+        val arabicCal = nowCal.clone() as Calendar
+        if (nowTotalMinutes >= maghribMin) {
+            arabicCal.add(Calendar.DAY_OF_YEAR, 1)
+        }
+        val arabicDayOfWeek = arabicCal.get(Calendar.DAY_OF_WEEK)
+        val arabicDayName = arabicDays[arabicDayOfWeek] ?: "الجمعة"
+        val dynamicDayBadgeText = "$englishDayName • $arabicDayName"
+
+        // Dynamic Time-Based Hero Solar Badge:
+        // Morning -> Shuruq, Midday -> Dhuhr, Evening -> Ghurub
+        val dynamicHeroSolarBadge: String = when {
+            effectiveNowMinutes < dhuhrMin - 30 -> "Shuruq ${PrayerTimeCalculator.formatMinutesTo12Hour(sunriseMin)}"
+            effectiveNowMinutes < asrMin -> "Dhuhr ${PrayerTimeCalculator.formatMinutesTo12Hour(dhuhrMin)}"
+            effectiveNowMinutes < ishaMin + 30 -> "Ghurub ${PrayerTimeCalculator.formatMinutesTo12Hour(maghribMin)}"
+            else -> "Shuruq ${PrayerTimeCalculator.formatMinutesTo12Hour(sunriseMin)}"
+        }
 
         val isFridaySheet = activeSheetCal.get(Calendar.DAY_OF_WEEK) == Calendar.FRIDAY
         val settingsMap = settingsList.associateBy { it.prayerId }
@@ -508,7 +540,7 @@ class PrayerHabitViewModel(
 
             val rec = todayPrayerMap[id]
             val isPrayed = rec?.isPrayed == true
-            val canMarkPrayedNow = effectiveNowMinutes >= resolvedJamaahMin
+            val isMissedQadaStatus = rec?.completionStatus == PrayerCompletionStatus.MISSED_QADA.name
             val strictEndMin = strictEndMinutesMap[id] ?: islamicMidnightMin
             val windowEndEpochMs = sheetStartCal.timeInMillis + (strictEndMin * 60_000L)
 
@@ -517,10 +549,20 @@ class PrayerHabitViewModel(
             // AFTER firstLaunchEpochMs (or explicitly rolled over) transition to MISSED_QADA when unticked.
             val isWindowExpiredUnprayed = !isPrayed && (
                 (effectiveNowMinutes >= strictEndMin && windowEndEpochMs > firstLaunchEpochMs) ||
-                    (effectiveNowMinutes >= pstMin && rec?.completionStatus == PrayerCompletionStatus.MISSED_QADA.name)
+                    (effectiveNowMinutes >= pstMin && isMissedQadaStatus)
             )
 
+            if (isWindowExpiredUnprayed && !isMissedQadaStatus) {
+                viewModelScope.launch {
+                    repository.markPrayerAsMissedQada(effectiveDateIso, id)
+                }
+            }
+
+            // Survey Q13 & Q14: Unlocks as soon as Prayer Start Time (PST) begins, and stays unlocked when Qaza so user can log it as prayed later
+            val canMarkPrayedNow = effectiveNowMinutes >= pstMin || isWindowExpiredUnprayed || isMissedQadaStatus
+
             val status = when {
+                isPrayed && rec?.completionStatus == PrayerCompletionStatus.PRAYED_LATE.name -> PrayerCompletionStatus.PRAYED_LATE
                 isPrayed -> PrayerCompletionStatus.PRAYED_ON_TIME
                 isWindowExpiredUnprayed -> PrayerCompletionStatus.MISSED_QADA
                 else -> PrayerCompletionStatus.PENDING
@@ -563,7 +605,7 @@ class PrayerHabitViewModel(
         val preAdhanThresholdMin = ctrl.userPrefs?.preAdhanAlertMinutes ?: 5
         val preJamaahThresholdMin = ctrl.userPrefs?.preJamaahAlertMinutes ?: 15
         val nagRepeatMin = ctrl.userPrefs?.nagIntervalMinutes ?: 10
-        val urgentThresholdMin = ctrl.userPrefs?.urgentEndWindowMinutes ?: 30
+        val urgentThresholdMin = ctrl.userPrefs?.urgentEndWindowMinutes ?: 15
 
         // Compute real-time window metrics & 4-phase Hero Card progression for the featured prayer
         // Note: Mosque Jama'ah clock time (featured.jamaahMinutes) NEVER shifts when Snooze is tapped.
@@ -577,6 +619,8 @@ class PrayerHabitViewModel(
         val primaryRightTimer: String
         val progressLeftLabel: String
         val progressRightLabel: String
+        val lockScreenStageTime: String
+        val elapsedJamaahFormatted: String
         val windowEndFormatted: String
         val elapsedSinceJamaahMin: Int
         val remainingUntilEndMin: Int
@@ -586,6 +630,7 @@ class PrayerHabitViewModel(
         val progressFraction: Float
 
         val jamaahLabelPrefix = if (featured.settingsKey == "JUMUAH") "Jumu'ah" else "Jama'ah"
+        val featuredDisplayEndFormatted = PrayerTimeCalculator.formatMinutesTo12Hour(featured.displayEndMinutes)
 
         if (isActiveWindowUnprayed) {
             val windowStartMin = featured.pstMinutes
@@ -611,52 +656,58 @@ class PrayerHabitViewModel(
 
             if (effectiveNowSeconds >= postJamaah10mSec) {
                 // Phase 4: 10+ minutes have passed after Jama'ah time (and still unticked)
-                // -> Left shows JAMA'AH TIME, Right shows "X mins elapsed since Jama'ah"
+                // -> Left shows JAMA'AH TIME, Right shows "<Xm Ys / Xh Ym> elapsed since Jama'ah"
                 isJamaahPassed = true
                 val elapsedJamaahSec = (effectiveNowSeconds - jamaahSec).coerceAtLeast(0)
                 elapsedSinceJamaahMin = (elapsedJamaahSec / 60).coerceAtLeast(10)
+                elapsedJamaahFormatted = formatHoursMinutesSeconds(elapsedJamaahSec)
                 minutesToJamaah = 0
                 isSnoozeAllowedNow = true
+                lockScreenStageTime = "Ends at $featuredDisplayEndFormatted"
 
                 val isUrgentEnd = remainingUntilEndMin <= urgentThresholdMin
-                heroHeaderLabel = if (isUrgentEnd) "URGENT • PRAYER ENDING" else "CURRENT PRAYER"
-                jamaahBadgeText = "$elapsedSinceJamaahMin mins elapsed since Jama'ah"
+                heroHeaderLabel = "CURRENT PRAYER"
+                jamaahBadgeText = "$elapsedJamaahFormatted elapsed since Jama'ah"
                 heroJamaahPill = "$jamaahLabelPrefix $featuredJamaahFormatted"
                 heroLeftLabel = "JAMA'AH TIME"
                 heroLeftValue = featuredJamaahFormatted
-                heroCountdownSubtitleText = "$elapsedSinceJamaahMin mins elapsed since Jama'ah"
-                primaryRightTimer = "$elapsedSinceJamaahMin mins elapsed since Jama'ah"
+                heroCountdownSubtitleText = "$elapsedJamaahFormatted elapsed since Jama'ah"
+                primaryRightTimer = "$elapsedJamaahFormatted elapsed since Jama'ah"
                 progressLeftLabel = if (isUrgentEnd) {
                     "URGENT: ${remainingUntilEndMin}m remaining until ${featured.nameEnglish} ends"
                 } else {
-                    "$elapsedSinceJamaahMin mins elapsed since Jama'ah • ${remainingUntilEndMin}m left"
+                    "$elapsedJamaahFormatted elapsed since Jama'ah • ${remainingUntilEndMin}m left"
                 }
             } else if (effectiveNowSeconds >= jamaahSec) {
                 // Between Jama'ah time and +10m post-Jama'ah
                 isJamaahPassed = true
                 val elapsedJamaahSec = (effectiveNowSeconds - jamaahSec).coerceAtLeast(0)
                 elapsedSinceJamaahMin = (elapsedJamaahSec / 60).coerceAtLeast(1)
+                elapsedJamaahFormatted = formatHoursMinutesSeconds(elapsedJamaahSec)
                 minutesToJamaah = 0
                 isSnoozeAllowedNow = true
+                lockScreenStageTime = "Ends at $featuredDisplayEndFormatted"
 
                 heroHeaderLabel = "CURRENT PRAYER"
-                jamaahBadgeText = "$elapsedSinceJamaahMin mins elapsed since Jama'ah"
+                jamaahBadgeText = "$elapsedJamaahFormatted elapsed since Jama'ah"
                 heroJamaahPill = "$jamaahLabelPrefix $featuredJamaahFormatted"
                 heroLeftLabel = "JAMA'AH TIME"
                 heroLeftValue = featuredJamaahFormatted
-                heroCountdownSubtitleText = "$elapsedSinceJamaahMin mins elapsed since Jama'ah"
-                primaryRightTimer = "$elapsedSinceJamaahMin mins elapsed since Jama'ah"
-                progressLeftLabel = "Jama'ah started at $featuredJamaahFormatted ($elapsedSinceJamaahMin mins elapsed)"
+                heroCountdownSubtitleText = "$elapsedJamaahFormatted elapsed since Jama'ah"
+                primaryRightTimer = "$elapsedJamaahFormatted elapsed since Jama'ah"
+                progressLeftLabel = "Jama'ah started at $featuredJamaahFormatted ($elapsedJamaahFormatted elapsed)"
             } else if (effectiveNowSeconds < adhanSec) {
                 // Phase 2: Prayer Start Time (PST) has started, waiting for Adhan
                 // -> Says "Adhan in Xm Ys"
                 isJamaahPassed = false
                 elapsedSinceJamaahMin = 0
+                elapsedJamaahFormatted = "0m 00s"
                 val untilAdhanSec = (adhanSec - effectiveNowSeconds).coerceAtLeast(0)
                 val untilJamaahSec = (jamaahSec - effectiveNowSeconds).coerceAtLeast(0)
                 minutesToJamaah = (untilJamaahSec + 59) / 60
                 isSnoozeAllowedNow = minutesToJamaah <= preJamaahThresholdMin
                 val untilAdhanTimer = formatHoursMinutesSeconds(untilAdhanSec)
+                lockScreenStageTime = "Adhan $featuredAdhanFormatted"
 
                 heroHeaderLabel = "CURRENT PRAYER"
                 jamaahBadgeText = "Adhan in $untilAdhanTimer"
@@ -665,19 +716,21 @@ class PrayerHabitViewModel(
                 heroLeftValue = featuredAdhanFormatted
                 heroCountdownSubtitleText = "Adhan in $untilAdhanTimer"
                 primaryRightTimer = "Adhan in $untilAdhanTimer"
-                progressLeftLabel = "Adhan at $featuredAdhanFormatted • Jama'ah at $featuredJamaahFormatted"
+                progressLeftLabel = "$untilAdhanTimer remaining before Adhan"
             } else {
                 // Phase 3: Adhan time is done, waiting for Jama'ah
                 // -> Left shows ADHAN TIME for the first 3 minutes after Adhan, then switches to JAMA'AH TIME
                 // -> Right says "Jama'ah in Xm Ys"
                 isJamaahPassed = false
                 elapsedSinceJamaahMin = 0
+                elapsedJamaahFormatted = "0m 00s"
                 val untilJamaahSec = (jamaahSec - effectiveNowSeconds).coerceAtLeast(0)
                 minutesToJamaah = (untilJamaahSec + 59) / 60
                 isSnoozeAllowedNow = minutesToJamaah <= preJamaahThresholdMin
                 val untilJamaahTimer = formatHoursMinutesSeconds(untilJamaahSec)
                 val postAdhanSwitchSec = adhanSec + (3 * 60)
                 val showJamaahOnLeft = effectiveNowSeconds >= postAdhanSwitchSec
+                lockScreenStageTime = "$jamaahLabelPrefix $featuredJamaahFormatted"
 
                 heroHeaderLabel = "CURRENT PRAYER"
                 jamaahBadgeText = "${minutesToJamaah}m until Jama'ah"
@@ -686,14 +739,16 @@ class PrayerHabitViewModel(
                 heroLeftValue = if (showJamaahOnLeft) featuredJamaahFormatted else featuredAdhanFormatted
                 heroCountdownSubtitleText = "Jama'ah in $untilJamaahTimer"
                 primaryRightTimer = "Jama'ah in $untilJamaahTimer"
-                progressLeftLabel = "${minutesToJamaah}m remaining before Jama'ah ($featuredJamaahFormatted)"
+                progressLeftLabel = "$untilJamaahTimer remaining before Jama'ah"
             }
         } else {
             // Phase 1: Previous prayer is done (or between windows) -> waiting for next prayer's start time (PST)
             // -> Left shows "STARTS AT" with PST time, Right says ONLY "Next prayer in Xm Ys"
             isJamaahPassed = false
             elapsedSinceJamaahMin = 0
+            elapsedJamaahFormatted = "0m 00s"
             isSnoozeAllowedNow = false
+            lockScreenStageTime = "Starts at $featuredPstFormatted"
 
             val nextPstMin = if (featured.id == "FAJR" && effectiveNowMinutes >= ishaMin) {
                 featured.pstMinutes + 1440
@@ -744,7 +799,7 @@ class PrayerHabitViewModel(
             heroLeftValue = featuredPstFormatted
             heroCountdownSubtitleText = "Next prayer in $untilNextPstWithSec"
             primaryRightTimer = "Next prayer in $untilNextPstWithSec"
-            progressLeftLabel = "Starts at $featuredPstFormatted • Adhan $featuredAdhanFormatted • Jama'ah $featuredJamaahFormatted"
+            progressLeftLabel = "$untilNextPstWithSec remaining until ${featured.nameEnglish}"
         }
 
         val citiesList = (if (ctrl.sqlCities.isNotEmpty()) {
@@ -877,7 +932,7 @@ class PrayerHabitViewModel(
             isSearchingLocations = ctrl.isSearching,
             sqliteFallbackCityCount = citiesList.size,
             locationSourceStatus = ctrl.locationSourceStatus,
-            dayAndDateBadgeText = dayAndDateFormatter.format(nowCal.time),
+            dayAndDateBadgeText = dynamicDayBadgeText,
             hijriDateText = PrayerTimeCalculator.getApproximateHijriDateString(nowCal),
             gregorianDateText = displayDateFormatter.format(nowCal.time),
             currentTimeFormatted = clockTimeFormatter.format(nowCal.time),
@@ -886,6 +941,7 @@ class PrayerHabitViewModel(
             islamicMidnightFormatted = islamicMidnightFormatted,
             prayers = prayerItems,
             solarWarnings = solarWarningItems,
+            heroSolarBadgeText = dynamicHeroSolarBadge,
             featuredPrayer = featured,
             isFeaturedPrayerActiveWindow = isActiveWindowUnprayed,
             isJamaahTimePassed = isJamaahPassed,
@@ -901,6 +957,8 @@ class PrayerHabitViewModel(
             primaryRightTimerText = primaryRightTimer,
             progressLeftLabelText = progressLeftLabel,
             progressRightLabelText = progressRightLabel,
+            lockScreenStageTimeText = lockScreenStageTime,
+            elapsedSinceJamaahFormatted = elapsedJamaahFormatted,
             prayerWindowEndTimeFormatted = windowEndFormatted,
             minutesElapsedSinceJamaah = elapsedSinceJamaahMin,
             minutesRemainingUntilPrayerEnds = remainingUntilEndMin,
@@ -976,7 +1034,7 @@ class PrayerHabitViewModel(
             val preAdhanMin = (prefs?.preAdhanAlertMinutes ?: 5).coerceIn(0, 30)
             val preJamaahMin = (prefs?.preJamaahAlertMinutes ?: 15).coerceIn(5, 45)
             val nagIntervalMin = (prefs?.nagIntervalMinutes ?: 10).coerceIn(5, 60)
-            val urgentThresholdMin = (prefs?.urgentEndWindowMinutes ?: 30).coerceIn(10, 60)
+            val urgentThresholdMin = (prefs?.urgentEndWindowMinutes ?: 15).coerceIn(5, 60)
 
             val middayName = if (isFriday) "Jumu'ah" else "Dhuhr"
             val prayerDefs = listOf(
@@ -1036,19 +1094,32 @@ class PrayerHabitViewModel(
                 val pstStr = PrayerTimeCalculator.formatMinutesTo12Hour(pstMin)
                 val adhanStr = PrayerTimeCalculator.formatMinutesTo12Hour(adhanMin)
                 val jamaahStr = PrayerTimeCalculator.formatMinutesTo12Hour(jamaahMin)
+                val urgentBeforeEndMin = 15
+                val urgentBeforeEndEpochMs = windowEndEpochMs - (urgentBeforeEndMin * 60_000L)
 
                 val milestones = buildList {
+                    // Trigger 1: Natural Prayer Start Time (PST)
                     add(AlarmTriggerType.STAGE_1_PST_START to pstEpochMs)
                     if (preAdhanMin > 0 && preAdhanEpochMs > pstEpochMs) {
                         add(AlarmTriggerType.STAGE_PRE_ADHAN to preAdhanEpochMs)
                     }
+                    // Trigger 2: Mosque Adhan Time
                     if (adhanEpochMs > pstEpochMs) {
                         add(AlarmTriggerType.STAGE_2_ADHAN_COUNTDOWN to adhanEpochMs)
                     }
                     if (preJamaahMin > 0 && preJamaahEpochMs > adhanEpochMs) {
                         add(AlarmTriggerType.STAGE_PRE_JAMAAH to preJamaahEpochMs)
                     }
+                    // Trigger 3: Mosque Jama'ah Time
+                    if (jamaahEpochMs > adhanEpochMs) {
+                        add(AlarmTriggerType.STAGE_JAMAAH_START to jamaahEpochMs)
+                    }
+                    // Trigger 4: 10m Post-Jama'ah (and periodic repeats)
                     add(AlarmTriggerType.STAGE_3_POST_JAMAAH_NAG to firstPostJamaahNagEpochMs)
+                    // Trigger 5: 15 minutes before prayer window ends if still unprayed
+                    if (urgentBeforeEndEpochMs > jamaahEpochMs) {
+                        add(AlarmTriggerType.STAGE_4_URGENT_END_OF_WINDOW to urgentBeforeEndEpochMs)
+                    }
                 }.sortedBy { it.second }
 
                 val upcomingMilestone = milestones.firstOrNull { it.second > nowMs && it.second < windowEndEpochMs }
@@ -1145,11 +1216,14 @@ class PrayerHabitViewModel(
             state.alarmRuntimeState.nextScheduledAlarmEpochMs > nowEpochMs + 10_000L
         if (isActivelySnoozed) return
 
+        val urgentEndWarningMin = (featured.endMinutes - 15).coerceAtLeast(jamaahMin + 1)
         val matchedStage: AlarmTriggerType? = when {
             nowMin == pstMin -> if (adhanMin == pstMin) AlarmTriggerType.STAGE_2_ADHAN_COUNTDOWN else AlarmTriggerType.STAGE_1_PST_START
             state.preAdhanAlertMinutes > 0 && nowMin == preAdhanMin && preAdhanMin > pstMin -> AlarmTriggerType.STAGE_PRE_ADHAN
             nowMin == adhanMin && adhanMin > pstMin -> AlarmTriggerType.STAGE_2_ADHAN_COUNTDOWN
             state.preJamaahAlertMinutes > 0 && nowMin == preJamaahMin && preJamaahMin > adhanMin -> AlarmTriggerType.STAGE_PRE_JAMAAH
+            nowMin == jamaahMin -> AlarmTriggerType.STAGE_JAMAAH_START
+            nowMin == urgentEndWarningMin -> AlarmTriggerType.STAGE_4_URGENT_END_OF_WINDOW
             nowMin >= postJamaahStartMin && ((nowMin - postJamaahStartMin) % repeatMin == 0) -> {
                 if (state.minutesRemainingUntilPrayerEnds <= state.urgentEndWindowMinutes) {
                     AlarmTriggerType.STAGE_4_URGENT_END_OF_WINDOW
@@ -1294,8 +1368,8 @@ class PrayerHabitViewModel(
 
     fun togglePrayerCompletion(prayer: PrayerItemUiModel) {
         if (!prayer.isPrayed && !prayer.canMarkPrayed) {
-            val jamaahStr = PrayerTimeCalculator.formatMinutesTo12Hour(prayer.jamaahMinutes)
-            showTransientBanner("${prayer.nameEnglish} can only be marked after Jama'ah time ($jamaahStr)")
+            val pstStr = PrayerTimeCalculator.formatMinutesTo12Hour(prayer.pstMinutes)
+            showTransientBanner("${prayer.nameEnglish} can only be marked after prayer starts ($pstStr)")
             return
         }
         viewModelScope.launch {
@@ -1312,7 +1386,11 @@ class PrayerHabitViewModel(
             }
             armDailyExactAlarmsForCity(_selectedCity.value)
             val actionText = if (willBePrayed) {
-                "${prayer.nameEnglish} marked as prayed ✓ (Alerts stopped)"
+                if (prayer.completionStatus == PrayerCompletionStatus.MISSED_QADA) {
+                    "${prayer.nameEnglish} Qaza make-up logged ✓"
+                } else {
+                    "${prayer.nameEnglish} marked as prayed ✓ (Alerts stopped)"
+                }
             } else {
                 "${prayer.nameEnglish} unmarked (Pending • Alerts re-armed)"
             }
@@ -1329,8 +1407,8 @@ class PrayerHabitViewModel(
         } ?: return
 
         if (!targetPrayer.isPrayed && !targetPrayer.canMarkPrayed) {
-            val jamaahStr = PrayerTimeCalculator.formatMinutesTo12Hour(targetPrayer.jamaahMinutes)
-            showTransientBanner("${targetPrayer.nameEnglish} can only be marked after Jama'ah time ($jamaahStr)")
+            val pstStr = PrayerTimeCalculator.formatMinutesTo12Hour(targetPrayer.pstMinutes)
+            showTransientBanner("${targetPrayer.nameEnglish} can only be marked after prayer starts ($pstStr)")
             return
         }
 

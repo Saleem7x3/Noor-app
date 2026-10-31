@@ -37,7 +37,13 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -114,9 +120,23 @@ fun NotificationLockScreenContent(
             AlarmTriggerType.STAGE_1_PST_START
     }
 
+    var sweepTriggerCount by remember { mutableStateOf(0) }
+    var isFastSweeping by remember { mutableStateOf(true) }
+    var sweepTarget by remember { mutableFloatStateOf(0.15f) }
+
+    LaunchedEffect(featuredPrayer?.id, activeStage, sweepTriggerCount) {
+        isFastSweeping = true
+        sweepTarget = 0.18f
+        delay(120L)
+        sweepTarget = 1.0f
+        delay(1800L)
+        isFastSweeping = false
+    }
+
+    val targetFraction = if (isFastSweeping) sweepTarget else uiState.notificationProgressFraction
     val animatedProgress by animateFloatAsState(
-        targetValue = uiState.notificationProgressFraction,
-        animationSpec = tween(durationMillis = 450),
+        targetValue = targetFraction,
+        animationSpec = tween(durationMillis = if (isFastSweeping) 1650 else 550),
         label = "notification_progress_bar"
     )
 
@@ -169,7 +189,7 @@ fun NotificationLockScreenContent(
                     border = BorderStroke(1.dp, SlateStrokeBorder)
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
@@ -203,7 +223,7 @@ fun NotificationLockScreenContent(
                 )
 
                 Text(
-                    text = "${uiState.gregorianDateText} • ${uiState.selectedCity.name}",
+                    text = "${uiState.dayAndDateBadgeText} • ${uiState.selectedCity.name}",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MutedPeriwinkle,
                     maxLines = 1,
@@ -327,68 +347,51 @@ fun NotificationLockScreenContent(
                         }
                     }
 
-                    // Middle Section: Prayer Name on Left, 4-Phase Status on Right, Full-Width Schedule Summary Below
+                    // Middle Section: Prayer Name ("Jumu'ah الجمعة") on Left, Full-Width Schedule Summary Below
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Text(
-                                    text = "$prayerName Prayer",
-                                    style = if (isTightDisplay) {
-                                        MaterialTheme.typography.titleLarge
-                                    } else {
-                                        MaterialTheme.typography.headlineSmall
-                                    },
-                                    color = CrispOffWhite,
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 1,
-                                    softWrap = false
-                                )
-                                if (!isTightDisplay) {
-                                    Text(
-                                        text = prayerArabic,
-                                        style = MaterialTheme.typography.titleMedium,
-                                        color = ElegantGold,
-                                        maxLines = 1,
-                                        softWrap = false
-                                    )
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.width(8.dp))
-
                             Text(
-                                text = uiState.heroCountdownSubtitleText,
-                                style = MaterialTheme.typography.labelLarge,
-                                fontSize = if (isTightDisplay) 12.sp else 13.5.sp,
-                                color = if (uiState.isJamaahTimePassed) RadiantAmberGlow else ElegantGold,
+                                text = prayerName,
+                                style = if (isTightDisplay) {
+                                    MaterialTheme.typography.titleLarge
+                                } else {
+                                    MaterialTheme.typography.headlineSmall
+                                },
+                                color = CrispOffWhite,
                                 fontWeight = FontWeight.Bold,
                                 maxLines = 1,
-                                softWrap = false,
-                                overflow = TextOverflow.Ellipsis,
-                                textAlign = TextAlign.End,
-                                modifier = Modifier.weight(1f)
+                                softWrap = false
+                            )
+                            Text(
+                                text = prayerArabic,
+                                style = if (isTightDisplay) {
+                                    MaterialTheme.typography.titleSmall
+                                } else {
+                                    MaterialTheme.typography.titleMedium
+                                },
+                                color = ElegantGold,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                softWrap = false
                             )
                         }
 
                         Text(
-                            text = "Starts at $pstTime • Adhan $adhanTime • Jama'ah $jamaahTime",
+                            text = uiState.lockScreenStageTimeText,
                             style = MaterialTheme.typography.bodySmall,
-                            fontSize = if (isTightDisplay) 11.sp else 12.sp,
+                            fontSize = if (isTightDisplay) 11.5.sp else 12.5.sp,
                             color = MutedPeriwinkle,
+                            fontWeight = FontWeight.Medium,
                             maxLines = 1,
                             softWrap = false,
                             overflow = TextOverflow.Ellipsis
                         )
                     }
 
-                    // Progress bar showing time remaining / elapsed
+                    // Progress bar: Countdown/status on Left above loading bar, exact window % elapsed on Right
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -396,19 +399,22 @@ fun NotificationLockScreenContent(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = uiState.progressLeftLabelText,
-                                style = MaterialTheme.typography.labelSmall,
-                                fontSize = if (isTightDisplay) 10.5.sp else 11.5.sp,
-                                color = if (uiState.isJamaahTimePassed) CrispOffWhite else MutedPeriwinkle,
-                                fontWeight = if (uiState.isJamaahTimePassed) FontWeight.SemiBold else FontWeight.Normal,
+                                text = uiState.heroCountdownSubtitleText,
+                                style = MaterialTheme.typography.labelLarge,
+                                fontSize = if (isTightDisplay) 11.5.sp else 13.sp,
+                                color = if (uiState.isJamaahTimePassed) RadiantAmberGlow else ElegantGold,
+                                fontWeight = FontWeight.Bold,
                                 maxLines = 1,
                                 softWrap = false,
                                 overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("lock_screen_countdown_above_bar")
                             )
                             Spacer(modifier = Modifier.width(8.dp))
+                            val pctLoaded = (animatedProgress * 100).toInt()
                             Text(
-                                text = uiState.progressRightLabelText,
+                                text = "$pctLoaded% loaded",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontSize = if (isTightDisplay) 10.5.sp else 11.5.sp,
                                 color = ElegantGold,
@@ -445,88 +451,50 @@ fun NotificationLockScreenContent(
                         }
                     }
 
-                    // Action Buttons: "Mark as Prayed" (locked before Jama'ah) and "Snooze 5m" (only when isSnoozeEnabled)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Button(
-                            onClick = onMarkAsPrayed,
-                            modifier = Modifier
-                                .weight(if (uiState.isSnoozeEnabled) 1.15f else 1f)
-                                .height(48.dp)
-                                .testTag("notification_mark_as_prayed_button"),
-                            shape = RoundedCornerShape(14.dp),
-                            border = if (!canMarkPrayedNow) BorderStroke(1.dp, SlateStrokeBorder) else null,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = when {
-                                    uiState.isIshaMissedAfterMidnight -> CoralAlert
-                                    uiState.isAllTodayPrayersCompleted -> EmeraldCompleted
-                                    canMarkPrayedNow -> ElegantGold
-                                    else -> DeepSlateDarker
-                                },
-                                contentColor = when {
-                                    uiState.isIshaMissedAfterMidnight -> CrispOffWhite
-                                    canMarkPrayedNow || uiState.isAllTodayPrayersCompleted -> OnGoldDark
-                                    else -> MutedPeriwinkle
-                                }
-                            ),
-                            contentPadding = PaddingValues(horizontal = 12.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (canMarkPrayedNow) Icons.Filled.Check else Icons.Outlined.Lock,
-                                contentDescription = "Mark as Prayed",
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = when {
-                                    uiState.isIshaMissedAfterMidnight -> "Log Isha Make-Up (Qada) ✓"
-                                    uiState.isAllTodayPrayersCompleted -> "All 5 Prayed ✓ (Next: $prayerName)"
-                                    canMarkPrayedNow -> "Mark $prayerName as Prayed"
-                                    else -> "Unlocks at Jama'ah ($jamaahTime)"
-                                },
-                                style = MaterialTheme.typography.labelLarge,
-                                fontSize = if (isTightDisplay) 12.sp else 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                softWrap = false,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-
-                        if (uiState.isSnoozeEnabled) {
-                            OutlinedButton(
-                                onClick = onSnoozeFiveMinutes,
-                                modifier = Modifier
-                                    .weight(0.85f)
-                                    .height(48.dp)
-                                    .testTag("notification_snooze_5m_button"),
-                                shape = RoundedCornerShape(14.dp),
-                                border = BorderStroke(1.dp, SlateStrokeBorder),
-                                colors = ButtonDefaults.outlinedButtonColors(
-                                    containerColor = DeepSlateBlue.copy(alpha = 0.6f),
-                                    contentColor = CrispOffWhite
-                                ),
-                                contentPadding = PaddingValues(horizontal = 10.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.Snooze,
-                                    contentDescription = "Snooze 5 minutes",
-                                    tint = ElegantGold,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = stringResource(R.string.snooze_5m),
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontSize = if (isTightDisplay) 12.sp else 13.sp,
-                                    maxLines = 1,
-                                    softWrap = false,
-                                    overflow = TextOverflow.Ellipsis
-                                )
+                    // Action Button: "Mark as Prayed" (only action, unlocked starting from PST)
+                    Button(
+                        onClick = onMarkAsPrayed,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("notification_mark_as_prayed_button"),
+                        shape = RoundedCornerShape(14.dp),
+                        border = if (!canMarkPrayedNow) BorderStroke(1.dp, SlateStrokeBorder) else null,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = when {
+                                uiState.isIshaMissedAfterMidnight -> CoralAlert
+                                uiState.isAllTodayPrayersCompleted -> EmeraldCompleted
+                                canMarkPrayedNow -> ElegantGold
+                                else -> DeepSlateDarker
+                            },
+                            contentColor = when {
+                                uiState.isIshaMissedAfterMidnight -> CrispOffWhite
+                                canMarkPrayedNow || uiState.isAllTodayPrayersCompleted -> OnGoldDark
+                                else -> MutedPeriwinkle
                             }
-                        }
+                        ),
+                        contentPadding = PaddingValues(horizontal = 12.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (canMarkPrayedNow) Icons.Filled.Check else Icons.Outlined.Lock,
+                            contentDescription = "Mark as Prayed",
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = when {
+                                uiState.isIshaMissedAfterMidnight -> "Log Isha Make-Up (Qada) ✓"
+                                uiState.isAllTodayPrayersCompleted -> "All 5 Prayed ✓ (Next: $prayerName)"
+                                canMarkPrayedNow -> "Mark $prayerName as Prayed"
+                                else -> "Unlocks at Start Time ($pstTime)"
+                            },
+                            style = MaterialTheme.typography.labelLarge,
+                            fontSize = if (isTightDisplay) 12.sp else 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
                 }
             }
@@ -534,6 +502,7 @@ fun NotificationLockScreenContent(
             // Single clean button to test firing the live Android system notification banner (only when prayer window is active)
             OutlinedButton(
                 onClick = {
+                    sweepTriggerCount += 1
                     if (!uiState.isFeaturedPrayerActiveWindow) {
                         onNotificationTriggered(
                             "$prayerName has not started yet (Starts at $pstTime • ${uiState.heroCountdownSubtitleText})"

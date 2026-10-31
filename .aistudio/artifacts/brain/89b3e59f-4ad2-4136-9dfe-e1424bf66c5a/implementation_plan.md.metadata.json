@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan for larger Hero Card with clean 'CURRENT PRAYER' header, Day & Date left pill + GPS inside Location pill, improved Fajr-to-Isha rows with time-of-day icons and start-to-end ranges, interleaved Sun Rising / Top of Head Sun / Sun Setting rows, and synchronized Snooze & Notification elapsed-time calculation.",
-  "updatedAt":  "2026-10-30T11:40:37.240076734Z",
+  "summary":  "Updated implementation plan to move the prayer title (\"Jumu'ah الجمعة\") directly below \"NEXT PRAYER\" / \"CURRENT PRAYER\" at the top-left of the Hero Card, change the Screen 1 (Lock & Alert) prayer title from \"Jumu'ah Prayer\" to \"Jumu'ah الجمعة\", and move the \"Next prayer in xxxy\" countdown text on Screen 1 from below the Jama'ah pill to above the left side of the loading bar (replacing the previous left progress label).",
+  "updatedAt":  "2026-10-30T18:23:04.565794248Z",
   "requestFeedback":  true,
   "userFacing":  true
 }
