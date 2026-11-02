@@ -84,6 +84,7 @@ data class PrayerDashboardUiState(
     val isJamaahTimePassed: Boolean = false,
     val isAllTodayPrayersCompleted: Boolean = false,
     val isIshaMissedAfterMidnight: Boolean = false,
+    val isUrgentEndOfWindow: Boolean = false,
     val nextPrayerCountdownMode: NextPrayerCountdownMode = NextPrayerCountdownMode.NEXT_ADHAN,
     val heroHeaderStatusLabel: String = "CURRENT PRAYER",
     val jamaahStatusBadgeText: String = "24 min until Jama'ah",
@@ -555,6 +556,21 @@ class PrayerHabitViewModel(
             if (isWindowExpiredUnprayed && !isMissedQadaStatus) {
                 viewModelScope.launch {
                     repository.markPrayerAsMissedQada(effectiveDateIso, id)
+                    PrayerNotificationHelper.showDynamicPrayerNotification(
+                        context = alarmScheduler.appContext,
+                        prayerName = meta.second,
+                        pstTimeFormatted = PrayerTimeCalculator.formatMinutesTo12Hour(pstMin),
+                        adhanTimeFormatted = PrayerTimeCalculator.formatMinutesTo12Hour(resolvedAdhanMin),
+                        jamaahTimeFormatted = PrayerTimeCalculator.formatMinutesTo12Hour(resolvedJamaahMin),
+                        triggerType = AlarmTriggerType.STAGE_QAZA_ROLLOVER,
+                        minutesUntilJamaah = 0,
+                        minutesPassedSinceJamaah = 0,
+                        minutesRemainingUntilEnd = 0,
+                        progressPercent = 100,
+                        prayerId = id,
+                        dateIso = effectiveDateIso,
+                        nagIteration = 0
+                    )
                 }
             }
 
@@ -663,7 +679,7 @@ class PrayerHabitViewModel(
                 elapsedJamaahFormatted = formatHoursMinutesSeconds(elapsedJamaahSec)
                 minutesToJamaah = 0
                 isSnoozeAllowedNow = true
-                lockScreenStageTime = "Ends at $featuredDisplayEndFormatted"
+                lockScreenStageTime = "Starts $featuredPstFormatted • Adhan $featuredAdhanFormatted • Ends $featuredDisplayEndFormatted"
 
                 val isUrgentEnd = remainingUntilEndMin <= urgentThresholdMin
                 heroHeaderLabel = "CURRENT PRAYER"
@@ -686,7 +702,7 @@ class PrayerHabitViewModel(
                 elapsedJamaahFormatted = formatHoursMinutesSeconds(elapsedJamaahSec)
                 minutesToJamaah = 0
                 isSnoozeAllowedNow = true
-                lockScreenStageTime = "Ends at $featuredDisplayEndFormatted"
+                lockScreenStageTime = "Starts $featuredPstFormatted • Adhan $featuredAdhanFormatted • Ends $featuredDisplayEndFormatted"
 
                 heroHeaderLabel = "CURRENT PRAYER"
                 jamaahBadgeText = "$elapsedJamaahFormatted elapsed since Jama'ah"
@@ -707,7 +723,7 @@ class PrayerHabitViewModel(
                 minutesToJamaah = (untilJamaahSec + 59) / 60
                 isSnoozeAllowedNow = minutesToJamaah <= preJamaahThresholdMin
                 val untilAdhanTimer = formatHoursMinutesSeconds(untilAdhanSec)
-                lockScreenStageTime = "Adhan $featuredAdhanFormatted"
+                lockScreenStageTime = "Starts $featuredPstFormatted • Adhan $featuredAdhanFormatted • Ends $featuredDisplayEndFormatted"
 
                 heroHeaderLabel = "CURRENT PRAYER"
                 jamaahBadgeText = "Adhan in $untilAdhanTimer"
@@ -730,7 +746,7 @@ class PrayerHabitViewModel(
                 val untilJamaahTimer = formatHoursMinutesSeconds(untilJamaahSec)
                 val postAdhanSwitchSec = adhanSec + (3 * 60)
                 val showJamaahOnLeft = effectiveNowSeconds >= postAdhanSwitchSec
-                lockScreenStageTime = "$jamaahLabelPrefix $featuredJamaahFormatted"
+                lockScreenStageTime = "Starts $featuredPstFormatted • Adhan $featuredAdhanFormatted • Ends $featuredDisplayEndFormatted"
 
                 heroHeaderLabel = "CURRENT PRAYER"
                 jamaahBadgeText = "${minutesToJamaah}m until Jama'ah"
@@ -748,7 +764,7 @@ class PrayerHabitViewModel(
             elapsedSinceJamaahMin = 0
             elapsedJamaahFormatted = "0m 00s"
             isSnoozeAllowedNow = false
-            lockScreenStageTime = "Starts at $featuredPstFormatted"
+            lockScreenStageTime = "Starts $featuredPstFormatted • Adhan $featuredAdhanFormatted • Ends $featuredDisplayEndFormatted"
 
             val nextPstMin = if (featured.id == "FAJR" && effectiveNowMinutes >= ishaMin) {
                 featured.pstMinutes + 1440
@@ -947,6 +963,7 @@ class PrayerHabitViewModel(
             isJamaahTimePassed = isJamaahPassed,
             isAllTodayPrayersCompleted = allTodayPrayed,
             isIshaMissedAfterMidnight = isIshaMissedPastMidnight,
+            isUrgentEndOfWindow = isActiveWindowUnprayed && remainingUntilEndMin <= urgentThresholdMin,
             nextPrayerCountdownMode = ctrl.countdownMode,
             heroHeaderStatusLabel = heroHeaderLabel,
             jamaahStatusBadgeText = jamaahBadgeText,
@@ -1434,12 +1451,27 @@ class PrayerHabitViewModel(
             repository.markPrayerAsMissedQada(dateIso, featured.id)
             alarmScheduler.cancelAllAlarmsForPrayer(featured.id)
             PrayerNaggingForegroundService.stopNaggingLoop(alarmScheduler.appContext)
+            PrayerNotificationHelper.showDynamicPrayerNotification(
+                context = alarmScheduler.appContext,
+                prayerName = featured.nameEnglish,
+                pstTimeFormatted = PrayerTimeCalculator.formatMinutesTo12Hour(featured.pstMinutes),
+                adhanTimeFormatted = PrayerTimeCalculator.formatMinutesTo12Hour(featured.adhanMinutes),
+                jamaahTimeFormatted = PrayerTimeCalculator.formatMinutesTo12Hour(featured.jamaahMinutes),
+                triggerType = AlarmTriggerType.STAGE_QAZA_ROLLOVER,
+                minutesUntilJamaah = 0,
+                minutesPassedSinceJamaah = 0,
+                minutesRemainingUntilEnd = 0,
+                progressPercent = 100,
+                prayerId = featured.id,
+                dateIso = dateIso,
+                nagIteration = 0
+            )
             alarmDataStore.clearNaggingLoop(
-                reason = "Next prayer started: ${featured.nameEnglish} auto-marked as MISSED_QADA & nag stopped",
+                reason = "Next prayer started: ${featured.nameEnglish} auto-marked as MISSED_QADA & Qaza notification posted",
                 stageLabel = "AUTO_QADA_ROLLOVER"
             )
             armDailyExactAlarmsForCity(_selectedCity.value)
-            showTransientBanner("${featured.nameEnglish} auto-marked as Missed (Qada) on next prayer rollover")
+            showTransientBanner("${featured.nameEnglish} auto-marked as Qaza • Notification updated")
         }
     }
 

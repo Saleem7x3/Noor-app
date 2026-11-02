@@ -343,6 +343,9 @@ fun NoorPrayerAppRoot(
                                     onMarkAsPrayed = onMarkFeaturedAsPrayed,
                                     onSnoozeFiveMinutes = onSnoozeFeaturedFiveMin,
                                     onNotificationTriggered = onBannerMessage,
+                                    onEditJamaahClicked = onEditJamaahClicked,
+                                    onSavePrayerTimeSettings = onSavePrayerTimeSettings,
+                                    onDismissJamaahDialog = onDismissJamaahDialog,
                                     onToggleCountdownMode = onToggleCountdownMode,
                                     onUpdateRepeatInterval = onUpdateRepeatInterval,
                                     isCompactShowcase = false
@@ -501,6 +504,9 @@ private fun ThreeScreenShowcaseDeck(
                             onMarkAsPrayed = onMarkFeaturedAsPrayed,
                             onSnoozeFiveMinutes = onSnoozeFeaturedFiveMin,
                             onNotificationTriggered = onBannerMessage,
+                            onEditJamaahClicked = onEditJamaahClicked,
+                            onSavePrayerTimeSettings = onSavePrayerTimeSettings,
+                            onDismissJamaahDialog = onDismissJamaahDialog,
                             onToggleCountdownMode = onToggleCountdownMode,
                             onUpdateRepeatInterval = onUpdateRepeatInterval,
                             isCompactShowcase = true
@@ -613,6 +619,9 @@ private fun ThreeScreenShowcaseDeck(
                         onMarkAsPrayed = onMarkFeaturedAsPrayed,
                         onSnoozeFiveMinutes = onSnoozeFeaturedFiveMin,
                         onNotificationTriggered = onBannerMessage,
+                        onEditJamaahClicked = onEditJamaahClicked,
+                        onSavePrayerTimeSettings = onSavePrayerTimeSettings,
+                        onDismissJamaahDialog = onDismissJamaahDialog,
                         onToggleCountdownMode = onToggleCountdownMode,
                         onUpdateRepeatInterval = onUpdateRepeatInterval,
                         isCompactShowcase = true

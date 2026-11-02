@@ -67,8 +67,8 @@ interface PrayerDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertLocalCities(cities: List<LocalCityEntity>)
 
-    @Query("DELETE FROM local_cities WHERE city_id IN (:cityIds)")
-    suspend fun deleteLocalCitiesByIds(cityIds: List<String>)
+    @Query("DELETE FROM local_cities WHERE city_id NOT IN (:validCityIds) AND city_id NOT LIKE 'gps_%' AND city_id NOT LIKE 'nom_%' AND city_id NOT LIKE 'custom_%'")
+    suspend fun pruneUnrecognizedPreseededCities(validCityIds: List<String>)
 }
 
 

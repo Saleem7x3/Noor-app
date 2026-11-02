@@ -254,7 +254,7 @@ fun PrayerHomeScreenContent(
                 colors = CardDefaults.cardColors(containerColor = ElevatedSlateSurface),
                 border = BorderStroke(
                     1.4.dp,
-                    if (uiState.isIshaMissedAfterMidnight) CoralAlert.copy(alpha = 0.75f)
+                    if (uiState.isUrgentEndOfWindow || uiState.isIshaMissedAfterMidnight) CoralAlert.copy(alpha = 0.85f)
                     else ElegantGold.copy(alpha = 0.65f)
                 ),
                 elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
@@ -303,7 +303,7 @@ fun PrayerHomeScreenContent(
                                     style = MaterialTheme.typography.labelMedium,
                                     fontSize = if (isTightDisplay) 12.sp else 13.5.sp,
                                     color = when {
-                                        uiState.isIshaMissedAfterMidnight -> CoralAlert
+                                        uiState.isUrgentEndOfWindow || uiState.isIshaMissedAfterMidnight -> CoralAlert
                                         uiState.isAllTodayPrayersCompleted -> EmeraldCompleted
                                         else -> ElegantGold
                                     },
@@ -452,7 +452,11 @@ fun PrayerHomeScreenContent(
                                     text = uiState.heroCountdownSubtitleText,
                                     style = MaterialTheme.typography.titleMedium,
                                     fontSize = if (isTightDisplay) 14.sp else 16.5.sp,
-                                    color = if (uiState.isJamaahTimePassed) RadiantAmberGlow else CrispOffWhite,
+                                    color = when {
+                                        uiState.isUrgentEndOfWindow || uiState.isIshaMissedAfterMidnight -> CoralAlert
+                                        uiState.isJamaahTimePassed -> RadiantAmberGlow
+                                        else -> CrispOffWhite
+                                    },
                                     fontWeight = FontWeight.Bold,
                                     maxLines = 1,
                                     softWrap = false,
@@ -581,6 +585,19 @@ fun PrayerHomeScreenContent(
         )
     }
 
+    PrayerTimeConfigDialog(
+        uiState = uiState,
+        onSavePrayerTimeSettings = onSavePrayerTimeSettings,
+        onDismissJamaahDialog = onDismissJamaahDialog
+    )
+}
+
+@Composable
+fun PrayerTimeConfigDialog(
+    uiState: PrayerDashboardUiState,
+    onSavePrayerTimeSettings: (String, Int, Boolean, Int, Int, Boolean, Int) -> Unit,
+    onDismissJamaahDialog: () -> Unit
+) {
     // Unified 3-Tier Prayer Time Configuration Dialog (PST Reference + Configurable Adhan & Jama'ah via Clock Time or Offset)
     val editingPrayer = uiState.editingJamaahPrayer
     if (editingPrayer != null) {
@@ -1469,8 +1486,8 @@ private fun LocationSearchModalDialog(
                             }
                             Button(
                                 onClick = {
-                                    val lat = customLat.toDoubleOrNull() ?: 12.9562
-                                    val lon = customLon.toDoubleOrNull() ?: 77.5396
+                                    val lat = customLat.toDoubleOrNull() ?: 21.4225
+                                    val lon = customLon.toDoubleOrNull() ?: 39.8262
                                     val name = customTownName.ifBlank { "Custom Town" }
                                     onAddCustomLocation(name, customRegion, lat, lon)
                                 },

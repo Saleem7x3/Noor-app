@@ -8,6 +8,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -58,6 +59,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
+import com.example.data.PrayerItemUiModel
 import com.example.domain.PrayerTimeCalculator
 import com.example.notification.AlarmTriggerType
 import com.example.notification.PrayerNotificationHelper
@@ -90,6 +92,9 @@ fun NotificationLockScreenContent(
     onMarkAsPrayed: () -> Unit,
     onSnoozeFiveMinutes: () -> Unit,
     onNotificationTriggered: (String) -> Unit,
+    onEditJamaahClicked: (PrayerItemUiModel) -> Unit = {},
+    onSavePrayerTimeSettings: (String, Int, Boolean, Int, Int, Boolean, Int) -> Unit = { _, _, _, _, _, _, _ -> },
+    onDismissJamaahDialog: () -> Unit = {},
     onToggleCountdownMode: () -> Unit = {},
     onUpdateRepeatInterval: (Int, Int, Int, Int) -> Unit = { _, _, _, _ -> },
     modifier: Modifier = Modifier,
@@ -102,13 +107,13 @@ fun NotificationLockScreenContent(
     val pstTime = featuredPrayer?.let { PrayerTimeCalculator.formatMinutesTo12Hour(it.pstMinutes) } ?: "03:39 PM"
     val adhanTime = featuredPrayer?.let { PrayerTimeCalculator.formatMinutesTo12Hour(it.adhanMinutes) } ?: "04:30 PM"
     val jamaahTime = featuredPrayer?.let { PrayerTimeCalculator.formatMinutesTo12Hour(it.jamaahMinutes) } ?: "04:45 PM"
-    val canMarkPrayedNow = featuredPrayer?.canMarkPrayed == true ||
+    val canMarkPrayedNow = (uiState.isFeaturedPrayerActiveWindow && featuredPrayer?.canMarkPrayed == true) ||
         uiState.isAllTodayPrayersCompleted ||
         uiState.isIshaMissedAfterMidnight
 
     val activeStage = when {
-        uiState.isFeaturedPrayerActiveWindow && uiState.isJamaahTimePassed &&
-            uiState.minutesUntilNextPrayer in 1..uiState.urgentEndWindowMinutes ->
+        uiState.isUrgentEndOfWindow || (uiState.isFeaturedPrayerActiveWindow && uiState.isJamaahTimePassed &&
+            uiState.minutesUntilNextPrayer in 1..uiState.urgentEndWindowMinutes) ->
             AlarmTriggerType.STAGE_4_URGENT_END_OF_WINDOW
         uiState.isFeaturedPrayerActiveWindow && uiState.isJamaahTimePassed ->
             AlarmTriggerType.STAGE_3_POST_JAMAAH_NAG
@@ -321,7 +326,12 @@ fun NotificationLockScreenContent(
                                 1.dp,
                                 if (uiState.isJamaahTimePassed) RadiantAmberGlow else ElegantGold.copy(alpha = 0.7f)
                             ),
-                            modifier = Modifier.testTag("minutes_until_jamaah_badge")
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .clickable {
+                                    featuredPrayer?.let { onEditJamaahClicked(it) }
+                                }
+                                .testTag("minutes_until_jamaah_badge")
                         ) {
                             Row(
                                 modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
@@ -335,7 +345,7 @@ fun NotificationLockScreenContent(
                                         .background(if (uiState.isJamaahTimePassed) RadiantAmberGlow else ElegantGold)
                                 )
                                 Text(
-                                    text = uiState.heroJamaahPillText,
+                                    text = "${uiState.heroJamaahPillText} ✎",
                                     style = MaterialTheme.typography.labelSmall,
                                     fontSize = if (isTightDisplay) 10.5.sp else 11.sp,
                                     color = RadiantAmberGlow,
@@ -451,9 +461,15 @@ fun NotificationLockScreenContent(
                         }
                     }
 
-                    // Action Button: "Mark as Prayed" (only action, unlocked starting from PST)
+                    // Action Button: "Mark as Prayed" (locked before PST starts, unlocked starting from PST)
                     Button(
-                        onClick = onMarkAsPrayed,
+                        onClick = {
+                            if (canMarkPrayedNow) {
+                                onMarkAsPrayed()
+                            } else {
+                                onNotificationTriggered("$prayerName unlocks at Prayer Start Time ($pstTime)")
+                            }
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(48.dp)
@@ -462,13 +478,13 @@ fun NotificationLockScreenContent(
                         border = if (!canMarkPrayedNow) BorderStroke(1.dp, SlateStrokeBorder) else null,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = when {
-                                uiState.isIshaMissedAfterMidnight -> CoralAlert
+                                uiState.isIshaMissedAfterMidnight || activeStage == AlarmTriggerType.STAGE_4_URGENT_END_OF_WINDOW -> CoralAlert
                                 uiState.isAllTodayPrayersCompleted -> EmeraldCompleted
                                 canMarkPrayedNow -> ElegantGold
                                 else -> DeepSlateDarker
                             },
                             contentColor = when {
-                                uiState.isIshaMissedAfterMidnight -> CrispOffWhite
+                                uiState.isIshaMissedAfterMidnight || activeStage == AlarmTriggerType.STAGE_4_URGENT_END_OF_WINDOW -> CrispOffWhite
                                 canMarkPrayedNow || uiState.isAllTodayPrayersCompleted -> OnGoldDark
                                 else -> MutedPeriwinkle
                             }
@@ -581,4 +597,10 @@ fun NotificationLockScreenContent(
             }
         }
     }
+
+    PrayerTimeConfigDialog(
+        uiState = uiState,
+        onSavePrayerTimeSettings = onSavePrayerTimeSettings,
+        onDismissJamaahDialog = onDismissJamaahDialog
+    )
 }

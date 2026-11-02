@@ -1,54 +1,65 @@
-# Noor Prayer — Hero Card & Lock Screen Header, Title & Countdown Layout Refinement Plan
+# Noor Prayer — Screen 1 Card, Screen 2 Hero Card & Notification Optimization Plan
 
-This update repositions the prayer title (`"Jumu'ah الجمعة"`) directly beneath the top-left status label on the Hero Card, removes the extra `"Prayer"` suffix on Screen 1 (`Lock & Alert`) so it displays `"Jumu'ah الجمعة"`, and moves `"Next prayer in xxxy"` to sit above the left side of the loading bar on Screen 1.
+This update implements your selected UX and notification optimizations across the **Screen 1 (`Lock & Alert`) Card**, the **Screen 2 (`Prayers`) Hero Card**, and **Android System Notifications**.
 
 ## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> Your latest layout refinements for the Hero Card (Screen 2) and Lock & Alert card (Screen 1) are captured below alongside all existing features:
+> All confirmed choices from your answers are captured below:
 
-- **1. Hero Card Top-Left Prayer Title Placement (Screen 2 — Prayers)**:
-  - Move **`"Jumu'ah الجمعة"`** (`<Prayer Name> <Arabic Name>`) from the bottom-left cluster up to the **top-left cluster**, positioned **directly below `"NEXT PRAYER"` / `"CURRENT PRAYER"`**.
-  - The bottom-left cluster now cleanly displays only the stage time label (`STARTS AT` / `ADHAN TIME` / `JAMA'AH TIME`) and large time readout (`01:00 PM`), while the bottom-right keeps the `Jumu'ah 01:30 PM` pill and live countdown (`Next prayer in xxxy`).
-- **2. Screen 1 Prayer Title Format (Screen 1 — Lock & Alert)**:
-  - Remove the extra word `"Prayer"` from `"$prayerName Prayer"` so it is never two English words (`"Jumu'ah Prayer"`).
-  - Instead, always display **`"Jumu'ah الجمعة"`** (English prayer name + Arabic calligraphy right beside it).
-- **3. Screen 1 Countdown Placement Above Loading Bar (Screen 1 — Lock & Alert)**:
-  - Move **`"Next prayer in xxxy"`** (the live stage countdown / elapsed text that previously sat on the right below the `Jumu'ah 01:30 PM` pill) to **above the loading bar on the left**.
-  - Remove the previous left-side text above the loading bar, leaving `"Next prayer in xxxy"` on the left and `"X% loaded"` on the right directly above the loading bar.
+- **1. Screen 1 (`Lock & Alert`) Card Optimizations**:
+  - **Lock `"Mark as Prayed"` Before Prayer Start Time (Pre-PST)**: When waiting for the next prayer before its solar start time (`Pre-PST`), the bottom action button is locked and displays **`"Unlocks at <PST Time>"`** (e.g., `"Unlocks at 12:04 PM"`), preventing accidental early completion. As soon as Prayer Start Time begins, it unlocks to **`"Mark as Prayed"`**.
+  - **Full `Starts • Adhan • Ends` Summary Line**: Beneath the `"Jumu'ah الجمعة"` title, Screen 1 now displays the complete solar and mosque milestone strip: **`"Starts 12:04 PM • Adhan 01:00 PM • Ends 03:21 PM"`**.
+  - **Tappable Top-Right `Jama'ah` Pill**: Tapping the top-right `• Jumu'ah 01:30 PM` (or `• Jama'ah 04:45 PM`) pill on Screen 1 opens the **Adhan & Jama'ah Time Editor** bottom sheet for that prayer, matching Screen 2.
+- **2. Screen 2 (`Prayers`) Hero Card Enhancement**:
+  - **Coral Red Urgent State in Final 15 Minutes**: When an active unprayed prayer enters the last **15 minutes** before its solar window ends, the Hero Card's border, top-left `"CURRENT PRAYER"` status label, and bottom-right countdown/status text automatically transition to **Coral Red (`CoralAlert`)** to clearly signal urgency.
+- **3. System Notification Optimizations**:
+  - **Live Ticking Countdown / Elapsed Timer (`Chronometer`)**: Uses Android's native `Chronometer` in the notification header (`setUsesChronometer(true)`) so the countdown (before Jama'ah/window end) or elapsed time (after Jama'ah) ticks live every second in the notification shade alongside the `X% loaded` progress bar.
+  - **Automatic `Qaza` Rollover Notification**: If a prayer's window expires unprayed and rolls over to `Qaza` (`MISSED_QADA`), any stale urgent countdown notification is automatically replaced with a clean **`"<Prayer> Marked as Qaza"`** alert featuring a one-tap **`"Log as Prayed (Qaza)"`** action.
+  - **Three Separate Notification Sound Channels**:
+    1. **Soft Prayer Start & Qaza Channel**: Gentle chime for Prayer Start Time (`PST`) and Qaza rollover summaries.
+    2. **Active Adhan, Jama'ah & 10m Reminder Channel**: High-priority alert with vibration for Adhan, Jama'ah, and 10-minute post-Jama'ah nags.
+    3. **Urgent 15m End-of-Window Channel**: Alarm tone and strong vibration pattern for the final 15-minute warning.
 
 ---
 
 ## 1. Overview & Core Concept
 
-- **What It Does**: Refines the visual hierarchy of both the Hero Card on the Prayers screen and the Lock & Alert notification card on Screen 1 so the prayer identity (`"Jumu'ah الجمعة"`) anchors the top-left of the card and the live countdown (`"Next prayer in xxxy"`) sits cleanly above the left side of Screen 1's progress bar.
-- **Target Audience / Persona**: Daily worshippers who want an immediately scannable, uncluttered prayer card across both the lock-screen notification preview and the main dashboard.
-- **Key Value**: Eliminates redundant wording (`"Jumu'ah Prayer"`), balances top-left and bottom-left spacing inside the Hero Card, and consolidates progress/countdown status directly above the loading bar on Screen 1.
+- **What It Does**: Harmonizes completion locking, time editing, and urgent 15-minute visual cues across Screen 1 and Screen 2, while upgrading system notifications with live-ticking chronometers, dedicated audio channels per urgency tier, and automatic Qaza rollover cleanup.
+- **Target Audience / Persona**: Worshippers relying on both the in-app dashboard and lock-screen notification shade for accurate, real-time prayer tracking without stale alerts or accidental early taps.
+- **Key Value**: Prevents premature prayer logging before PST, surfaces complete start/adhan/end window times on Screen 1, lets you edit prayer times from either screen, and keeps notifications live and accurate through Qaza transitions.
 
 ---
 
 ## 2. User Experience & Visual Design
 
-- **Hero Card (Screen 2 — Prayers)**:
-  - **Top-Left Cluster**: `NEXT PRAYER` (or `CURRENT PRAYER`) header label on top, with **`Jumu'ah الجمعة`** directly underneath it.
-  - **Top-Right Cluster**: Time-based solar pill (`Shuruq` / `Dhuhr` / `Ghurub`).
-  - **Bottom-Left Cluster**: Stage time label (`STARTS AT` / `ADHAN TIME` / `JAMA'AH TIME`) + large gold time value (`01:00 PM`).
-  - **Bottom-Right Cluster**: Plump `Jumu'ah 01:30 PM` pill + live countdown/elapsed text below it.
-- **Lock & Alert Notification Card (Screen 1)**:
-  - **Top Row**: Status header (`NEXT PRAYER` / `CURRENT PRAYER`) on the left + `Jumu'ah 01:30 PM` pill on the right.
-  - **Middle Section**: **`Jumu'ah الجمعة`** (without the word `"Prayer"`) + schedule summary line (`Starts 12:04 PM • Adhan 01:00 PM • Jama'ah 01:30 PM`) underneath.
-  - **Loading Bar Header Row**: **`Next prayer in xxxy`** (or active stage countdown/elapsed text) on the **left above the loading bar**, and **`X% loaded`** on the **right above the loading bar** (the old left label above the loading bar is removed).
+- **Screen 1 (`Lock & Alert`) Card**:
+  - **Top-Right Pill**: `• Jumu'ah 01:30 PM ✎` — tappable with ripple feedback to open the Adhan & Jama'ah Time Editor sheet.
+  - **Subtitle Line**: Always shows `"Starts 12:04 PM • Adhan 01:00 PM • Ends 03:21 PM"`.
+  - **Bottom Action Button**:
+    - *Before PST*: Muted slate locked button showing `🔒 Unlocks at 12:04 PM (Prayer Start Time)`.
+    - *During Active Window*: Gold (or Coral Red in final 15m) button showing `✓ Mark as Prayed`.
+    - *All 5 Completed*: Emerald button showing `✓ All Today's Prayers Completed`.
+- **Screen 2 (`Prayers`) Hero Card**:
+  - Retains its exact layout (`CURRENT PRAYER` / `NEXT PRAYER` + `Jumu'ah الجمعة` on top-left, `Shuruq`/`Dhuhr`/`Ghurub` pill on top-right, stage time on bottom-left, `Jama'ah` pill + countdown on bottom-right).
+  - During the **last 15 minutes** of an unprayed active prayer window, the card border, `"CURRENT PRAYER"` header, and bottom-right status text shift to **Coral Red (`#FF6B6B`)**.
+- **Notification Shade**:
+  - **2.4s Discord-Style Fast Sweep → Live Chronometer + `X% loaded`**: Sweeps `18% → 52% → 86% → 100%` silently after the initial chime, then settles at `X% loaded` with Android's live `Chronometer` ticking in real time.
+  - **At Window End (if Unprayed)**: Transitions to `"<Prayer> Marked as Qaza (Window ended at 03:21 PM)"` with a `"Log as Prayed"` action button.
 
 ---
 
 ## 3. Key Product Decisions & Trade-Offs
 
-- **Decision 1: Grouping `"Jumu'ah الجمعة"` Below `"NEXT PRAYER"` / `"CURRENT PRAYER"` in the Hero Card**
-  - *Chosen Approach*: Place the English + Arabic prayer title inside a top-left `Column` directly beneath the status header (`CURRENT PRAYER` / `NEXT PRAYER`), leaving the bottom-left strictly for the time label and clock value.
-  - *Why*: Anchors the prayer identity immediately beneath its status label while giving the bottom sky wave and time readout extra breathing room.
-- **Decision 2: Unified `"Jumu'ah الجمعة"` Title & Left-Aligned Countdown Above Progress Bar on Screen 1**
-  - *Chosen Approach*: Render `prayerName` + `prayerArabic` (`"Jumu'ah الجمعة"`) on all display sizes without appending `"Prayer"`, remove the right-aligned countdown from the middle row, and place `uiState.heroCountdownSubtitleText` (`"Next prayer in xxxy"`) on the left directly above the loading bar in place of the old `progressLeftLabelText`.
-  - *Why*: Prevents horizontal crowding beside the prayer title and pairs the live time remaining/elapsed directly with the `X% loaded` progress bar.
+- **Decision 1: Unified Pre-PST Completion Lock Across Screen 1 & Screen 2**
+  - *Chosen Approach*: Gate Screen 1's primary button behind `isActiveWindowUnprayed` (which is true only when `effectiveNowMinutes >= pstMin` and the prayer is not yet completed).
+  - *Why*: Eliminates the discrepancy where Screen 2 locked checkboxes before PST while Screen 1 allowed marking a future prayer as prayed hours before it began.
+- **Decision 2: Native Android `Chronometer` Paired with Static `setOnlyAlertOnce` Progress Updates**
+  - *Chosen Approach*: Anchor `setWhen(...)` to the relevant milestone timestamp (counting down to Jama'ah/Window End before Jama'ah, or counting up from Jama'ah timestamp after Jama'ah) with `setUsesChronometer(true)`.
+  - *Why*: Provides a zero-battery-drain, OS-rendered second-by-second live timer in the notification shade without waking the CPU every second.
+- **Decision 3: Three-Tier Notification Channel Architecture**
+  - *Chosen Approach*: Split notification channels into `Soft PST & Qaza`, `Active Adhan/Jama'ah/Nag`, and `Urgent 15m End Warning`.
+  - *Why*: Allows users to keep PST notifications gentle while ensuring 10-minute post-Jama'ah nags and 15-minute urgent warnings remain prominent.
 
 ---
 
@@ -56,31 +67,42 @@ This update repositions the prayer title (`"Jumu'ah الجمعة"`) directly ben
 
 ```
 ┌───────────────────────────────────────────────────────────────────────────┐
-│                   Screen 2: Prayers — Hero Card Layout                    │
+│                Screen 1: Lock & Alert — Optimized Card                    │
 ├───────────────────────────────────────────────────────────────────────────┤
-│  NEXT PRAYER                                         ☀️ Dhuhr 12:04 PM    │
-│  Jumu'ah الجمعة                                                           │
+│  🔔 NEXT PRAYER                            [• Jumu'ah 01:30 PM ✎ (Tap) ]  │
 │                                                                           │
-│  STARTS AT                                          [ Jumu'ah 01:30 PM ]  │
-│  01:00 PM                                      Next prayer in 1h 22m 57s  │
+│  Jumu'ah الجمعة                                                           │
+│  Starts 12:04 PM • Adhan 01:00 PM • Ends 03:21 PM                         │
+│                                                                           │
+│  Next prayer in 1h 22m                                        42% loaded  │
+│  [████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░]  │
+│                                                                           │
+│  Pre-PST:   [        🔒 Unlocks at 12:04 PM (Prayer Start)            ]   │
+│  Active:    [                  ✓  Mark as Prayed                      ]   │
 └───────────────────────────────────────────────────────────────────────────┘
 
 ┌───────────────────────────────────────────────────────────────────────────┐
-│                Screen 1: Lock & Alert — Notification Card                 │
+│        Screen 2: Prayers — Hero Card (Final 15m Urgent Coral State)       │
 ├───────────────────────────────────────────────────────────────────────────┤
-│  🔔 NEXT PRAYER                                     [• Jumu'ah 01:30 PM ] │
-│                                                                           │
+│  CURRENT PRAYER (Coral Red)                          ☀️ Dhuhr 12:04 PM    │
 │  Jumu'ah الجمعة                                                           │
-│  Starts 12:04 PM • Adhan 01:00 PM • Jama'ah 01:30 PM                      │
 │                                                                           │
-│  Next prayer in 1h 22m 57s                                    42% loaded  │
-│  [████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░]  │
-│                                                                           │
-│  [                        ✓  Mark as Prayed                            ]  │
+│  JAMA'AH TIME                                       [ Jumu'ah 01:30 PM ]  │
+│  01:30 PM                        1h 36m elapsed since Jama'ah (Coral Red) │
 └───────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Component & State Mapping**:
-  - **Hero Card Top-Left Cluster**: Moves the `Row` displaying `featuredPrayer?.nameEnglish` (`"Jumu'ah"`) and `featuredPrayer?.nameArabic` (`"الجمعة"`) into a `Column` directly under `uiState.heroHeaderStatusLabel` (`"NEXT PRAYER"` / `"CURRENT PRAYER"`).
-  - **Screen 1 Title Row**: Replaces `"$prayerName Prayer"` with `prayerName` and ensures `prayerArabic` is always displayed beside it (`"Jumu'ah الجمعة"`), with the trailing right-side countdown text removed from that row.
-  - **Screen 1 Loading Bar Label Row**: Replaces `uiState.progressLeftLabelText` on the left above the loading bar with `uiState.heroCountdownSubtitleText` (`"Next prayer in xxxy"` / stage countdown / elapsed text), paired with `"$pctLoaded% loaded"` on the right.
+- **State & Component Mapping**:
+  - **`PrayerDashboardUiState` (`PrayerHabitViewModel`)**:
+    - Add `isUrgentEndOfWindow: Boolean` (`isActiveWindowUnprayed && remainingUntilEndMinutes <= urgentThresholdMin`).
+    - Set `lockScreenStageTimeText` to `"Starts $featuredPstFormatted • Adhan $featuredAdhanFormatted • Ends $featuredDisplayEndFormatted"` across all stages so all three milestones are always visible on Screen 1.
+    - Expose `featuredPrayerStartFormatted` (`featuredPstFormatted`) so Screen 1's locked button displays `"Unlocks at $featuredPstFormatted"`.
+  - **Screen 1 (`NotificationLockScreen`)**:
+    - Pass `onEditJamaahClicked: (PrayerItemUiModel) -> Unit` (and render `JamaahTimeEditorBottomSheet` when `uiState.editingPrayer != null` or invoke the shared ViewModel editor dialog) when the top-right `minutes_until_jamaah_badge` pill is tapped.
+    - When `!uiState.isActiveWindowUnprayed && !uiState.isAllTodayPrayersCompleted`, disable `mark_as_prayed_primary_button` and display a lock icon with `"Unlocks at ${uiState.featuredPrayerStartFormatted}"`.
+  - **Screen 2 (`PrayerHomeScreen`)**:
+    - Use `uiState.isUrgentEndOfWindow || uiState.isIshaMissedAfterMidnight` to style the Hero Card border, `heroHeaderStatusLabel`, and `hero_countdown_status_text` in `CoralAlert`.
+  - **Notifications (`PrayerNotificationHelper` & `PrayerAlarmReceiver`)**:
+    - Add `SOFT_PST_CHANNEL_ID = "noor_prayer_pst_soft_channel"` and `STAGE_QAZA_ROLLOVER` in `AlarmTriggerType`.
+    - Configure `setUsesChronometer(true)` and `setWhen(chronometerTargetEpochMs)` after the 2.4-second Discord-style loading sweep settles.
+    - Trigger `STAGE_QAZA_ROLLOVER` notification when a prayer transitions to `MISSED_QADA` at window end so the user is notified that the prayer was marked as Qaza and can log it when prayed.

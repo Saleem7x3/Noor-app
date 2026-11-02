@@ -25,6 +25,7 @@ import kotlinx.coroutines.launch
 import java.util.Locale
 
 object PrayerNotificationHelper {
+    const val SOFT_PST_CHANNEL_ID = "noor_prayer_pst_soft_channel"
     const val CHANNEL_ID = "noor_prayer_soft_chime_channel"
     const val URGENT_CHANNEL_ID = "noor_prayer_urgent_end_channel"
     const val NOTIFICATION_ID = 1001
@@ -53,12 +54,22 @@ object PrayerNotificationHelper {
                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                 .build()
 
+            val softPstChannel = NotificationChannel(
+                SOFT_PST_CHANNEL_ID,
+                "Soft Prayer Start & Qaza Alerts",
+                NotificationManager.IMPORTANCE_DEFAULT
+            ).apply {
+                description = "Gentle alerts when Prayer Start Time begins or when an unprayed window rolls over to Qaza"
+                enableVibration(false)
+                setSound(chimeUri, audioAttributes)
+            }
+
             val standardChannel = NotificationChannel(
                 CHANNEL_ID,
-                "Prayer PST, Adhan & Jama'ah Alerts",
+                "Active Adhan, Jama'ah & 10m Reminders",
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
-                description = "PST start alerts, Adhan countdowns, Jama'ah alerts, and post-Jama'ah repeat reminders"
+                description = "Active Adhan calls, Jama'ah alerts, and every-10-minute post-Jama'ah reminders"
                 enableVibration(true)
                 setSound(chimeUri, audioAttributes)
             }
@@ -75,6 +86,7 @@ object PrayerNotificationHelper {
             }
 
             val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            manager.createNotificationChannel(softPstChannel)
             manager.createNotificationChannel(standardChannel)
             manager.createNotificationChannel(urgentChannel)
         }
@@ -142,25 +154,35 @@ object PrayerNotificationHelper {
 
         val pstDisplay = pstTimeFormatted.ifBlank { adhanTimeFormatted }
         val clampedPct = progressPercent.coerceIn(1, 100)
+        val nowEpochMs = System.currentTimeMillis()
 
         val titleText: String
         val bodyText: String
         val baseSubText: String
         val channelToUse: String
+        val useLiveChronometer: Boolean
+        val chronometerCountDown: Boolean
+        val chronometerWhenMs: Long
 
         when (triggerType) {
             AlarmTriggerType.STAGE_1_PST_START -> {
                 titleText = "$prayerName Prayer Time Started ($pstDisplay)"
                 bodyText = "Adhan at $adhanTimeFormatted  •  Jama'ah at $jamaahTimeFormatted"
                 baseSubText = "Prayer Start Time"
-                channelToUse = CHANNEL_ID
+                channelToUse = SOFT_PST_CHANNEL_ID
+                useLiveChronometer = true
+                chronometerCountDown = true
+                chronometerWhenMs = nowEpochMs + (minutesUntilJamaah.coerceAtLeast(1) * 60_000L)
             }
 
             AlarmTriggerType.STAGE_PRE_ADHAN -> {
                 titleText = "$prayerName Adhan Soon ($adhanTimeFormatted)"
                 bodyText = "Mosque Adhan at $adhanTimeFormatted  •  Jama'ah at $jamaahTimeFormatted"
                 baseSubText = "Pre-Adhan Reminder"
-                channelToUse = CHANNEL_ID
+                channelToUse = SOFT_PST_CHANNEL_ID
+                useLiveChronometer = true
+                chronometerCountDown = true
+                chronometerWhenMs = nowEpochMs + (minutesUntilJamaah.coerceAtLeast(1) * 60_000L)
             }
 
             AlarmTriggerType.STAGE_2_ADHAN_COUNTDOWN -> {
@@ -169,6 +191,9 @@ object PrayerNotificationHelper {
                 bodyText = "Adhan $adhanTimeFormatted  •  Jama'ah $jamaahTimeFormatted"
                 baseSubText = "Adhan Call"
                 channelToUse = CHANNEL_ID
+                useLiveChronometer = true
+                chronometerCountDown = true
+                chronometerWhenMs = nowEpochMs + (minsToJamaah * 60_000L)
             }
 
             AlarmTriggerType.STAGE_PRE_JAMAAH -> {
@@ -177,6 +202,9 @@ object PrayerNotificationHelper {
                 bodyText = "Prepare for $prayerName Jama'ah  •  Jama'ah at $jamaahTimeFormatted"
                 baseSubText = "Pre-Jama'ah Reminder"
                 channelToUse = CHANNEL_ID
+                useLiveChronometer = true
+                chronometerCountDown = true
+                chronometerWhenMs = nowEpochMs + (minsToJamaah * 60_000L)
             }
 
             AlarmTriggerType.STAGE_JAMAAH_START -> {
@@ -184,6 +212,9 @@ object PrayerNotificationHelper {
                 bodyText = "Jama'ah congregation for $prayerName has started  •  Mark as Prayed when done"
                 baseSubText = "Jama'ah Started"
                 channelToUse = CHANNEL_ID
+                useLiveChronometer = true
+                chronometerCountDown = false
+                chronometerWhenMs = nowEpochMs
             }
 
             AlarmTriggerType.STAGE_3_POST_JAMAAH_NAG -> {
@@ -193,6 +224,9 @@ object PrayerNotificationHelper {
                 bodyText = "Jama'ah was $jamaahTimeFormatted  •  Please pray $prayerName (${minutesRemainingUntilEnd.coerceAtLeast(1)}m left)"
                 baseSubText = "Every ${repeatIntervalMinutes}m Reminder"
                 channelToUse = CHANNEL_ID
+                useLiveChronometer = true
+                chronometerCountDown = false
+                chronometerWhenMs = nowEpochMs - (passedMin * 60_000L)
             }
 
             AlarmTriggerType.STAGE_4_URGENT_END_OF_WINDOW -> {
@@ -203,10 +237,27 @@ object PrayerNotificationHelper {
                 bodyText = "$prayerName not prayed ($passedFormatted elapsed since Jama'ah) • Pray now"
                 baseSubText = "Urgent 15m End Warning"
                 channelToUse = URGENT_CHANNEL_ID
+                useLiveChronometer = true
+                chronometerCountDown = true
+                chronometerWhenMs = nowEpochMs + (remMin * 60_000L)
+            }
+
+            AlarmTriggerType.STAGE_QAZA_ROLLOVER -> {
+                titleText = "$prayerName Marked as Qaza"
+                bodyText = "$prayerName window ended unprayed  •  Tap 'Mark as Prayed' once you make it up"
+                baseSubText = "Qaza Rollover Alert"
+                channelToUse = SOFT_PST_CHANNEL_ID
+                useLiveChronometer = false
+                chronometerCountDown = false
+                chronometerWhenMs = nowEpochMs
             }
         }
 
-        val resolvedSubText = customSubTextSuffix ?: String.format(Locale.US, "%s • %d%% loaded", baseSubText, clampedPct)
+        val resolvedSubText = customSubTextSuffix ?: if (triggerType == AlarmTriggerType.STAGE_QAZA_ROLLOVER) {
+            "$baseSubText • Log make-up prayer"
+        } else {
+            String.format(Locale.US, "%s • %d%% loaded", baseSubText, clampedPct)
+        }
 
         val chimeUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
         val builder = NotificationCompat.Builder(context, channelToUse)
@@ -215,7 +266,10 @@ object PrayerNotificationHelper {
             .setContentText(bodyText)
             .setStyle(NotificationCompat.BigTextStyle().bigText(bodyText))
             .setSubText(resolvedSubText)
-            .setProgress(100, clampedPct, false)
+            .setProgress(100, if (triggerType == AlarmTriggerType.STAGE_QAZA_ROLLOVER) 100 else clampedPct, false)
+            .setShowWhen(true)
+            .setWhen(chronometerWhenMs)
+            .setUsesChronometer(useLiveChronometer && customSubTextSuffix == null)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setOnlyAlertOnce(onlyAlertOnce)
             .setCategory(
@@ -227,11 +281,19 @@ object PrayerNotificationHelper {
             )
             .setSound(chimeUri)
             .setContentIntent(contentPendingIntent)
-            .setOngoing(isOngoingForeground)
-            .setAutoCancel(!isOngoingForeground)
+            .setOngoing(isOngoingForeground && triggerType != AlarmTriggerType.STAGE_QAZA_ROLLOVER)
+            .setAutoCancel(!isOngoingForeground || triggerType == AlarmTriggerType.STAGE_QAZA_ROLLOVER)
 
-        // Prayer completion unlocks as soon as Prayer Start Time begins -> always include Mark as Prayed
-        builder.addAction(0, context.getString(R.string.mark_as_prayed), markPrayedPi)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            builder.setChronometerCountDown(chronometerCountDown)
+        }
+
+        val actionLabel = if (triggerType == AlarmTriggerType.STAGE_QAZA_ROLLOVER) {
+            "Log $prayerName (Qaza)"
+        } else {
+            context.getString(R.string.mark_as_prayed)
+        }
+        builder.addAction(0, actionLabel, markPrayedPi)
         builder.addAction(0, "Dismiss", dismissPi)
         return builder.build()
     }

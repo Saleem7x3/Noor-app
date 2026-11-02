@@ -59,22 +59,28 @@ class PrayerAlarmReceiver : BroadcastReceiver() {
                     ExactPrayerAlarmScheduler.ACTION_MARK_PRAYED -> {
                         val nowMarkMs = System.currentTimeMillis()
                         val existing = dao.getPrayerRecordSync(todayIso, prayerId)
+                        val wasQaza = existing?.completionStatus == PrayerCompletionStatus.MISSED_QADA.name
                         dao.upsertPrayerRecord(
                             PrayerRecordEntity(
                                 dateIso = todayIso,
                                 prayerId = prayerId,
                                 isPrayed = true,
-                                isInJamaah = true,
+                                isInJamaah = !wasQaza,
                                 completedAtMillis = nowMarkMs,
-                                completionStatus = PrayerCompletionStatus.PRAYED_ON_TIME.name,
+                                completionStatus = if (wasQaza) {
+                                    PrayerCompletionStatus.PRAYED_LATE.name
+                                } else {
+                                    PrayerCompletionStatus.PRAYED_ON_TIME.name
+                                },
                                 nagCountTriggered = existing?.nagCountTriggered ?: 0
                             )
                         )
                         scheduler.cancelAllAlarmsForPrayer(prayerId)
                         PrayerNaggingForegroundService.stopNaggingLoop(context)
+                        PrayerNotificationHelper.cancelNotification(context)
                         alarmDataStore.clearNaggingLoop(
                             reason = "$prayerName marked as Prayed via Notification Banner ✓",
-                            stageLabel = "PRAYED_ON_TIME"
+                            stageLabel = if (wasQaza) "PRAYED_LATE" else "PRAYED_ON_TIME"
                         )
                     }
 
@@ -87,6 +93,7 @@ class PrayerAlarmReceiver : BroadcastReceiver() {
                     ExactPrayerAlarmScheduler.ACTION_DISMISS_NAG -> {
                         scheduler.cancelAllAlarmsForPrayer(prayerId)
                         PrayerNaggingForegroundService.stopNaggingLoop(context)
+                        PrayerNotificationHelper.cancelNotification(context)
                         alarmDataStore.clearNaggingLoop(
                             reason = "$prayerName notification dismissed by user",
                             stageLabel = "DISMISSED"
@@ -142,8 +149,8 @@ class PrayerAlarmReceiver : BroadcastReceiver() {
                             return@launch
                         }
 
-                        // 2. If the prayer window has already expired, stop nagging for this prayer
-                        if (windowEndEpochMs > 0L && nowMs >= windowEndEpochMs) {
+                        // 2. If the prayer window has already expired, transition to Qaza and update notification to Qaza alert
+                        if ((windowEndEpochMs > 0L && nowMs >= windowEndEpochMs) || triggerType == AlarmTriggerType.STAGE_QAZA_ROLLOVER) {
                             scheduler.cancelAllAlarmsForPrayer(prayerId)
                             PrayerNaggingForegroundService.stopNaggingLoop(context)
                             if (windowEndEpochMs > firstLaunchEpochMs) {
@@ -158,9 +165,26 @@ class PrayerAlarmReceiver : BroadcastReceiver() {
                                         nagCountTriggered = currentRecord?.nagCountTriggered ?: 1
                                     )
                                 )
+                                PrayerNotificationHelper.showDynamicPrayerNotification(
+                                    context = context,
+                                    prayerName = prayerName,
+                                    pstTimeFormatted = pstTime,
+                                    adhanTimeFormatted = adhanTime,
+                                    jamaahTimeFormatted = jamaahTime,
+                                    triggerType = AlarmTriggerType.STAGE_QAZA_ROLLOVER,
+                                    minutesUntilJamaah = 0,
+                                    minutesPassedSinceJamaah = 0,
+                                    minutesRemainingUntilEnd = 0,
+                                    repeatIntervalMinutes = nagIntervalMin,
+                                    preJamaahAlertMinutes = preJamaahMin,
+                                    progressPercent = 100,
+                                    prayerId = prayerId,
+                                    dateIso = todayIso,
+                                    nagIteration = 0
+                                )
                             }
                             alarmDataStore.clearNaggingLoop(
-                                reason = "$prayerName window ended • Transitioned to Qada",
+                                reason = "$prayerName window ended • Auto-marked as Qaza",
                                 stageLabel = "WINDOW_ENDED_QADA"
                             )
                             return@launch
@@ -380,6 +404,8 @@ class PrayerAlarmReceiver : BroadcastReceiver() {
                                     eventDescription = stageDesc
                                 )
                             }
+
+                            AlarmTriggerType.STAGE_QAZA_ROLLOVER -> Unit
                         }
                     }
                 }

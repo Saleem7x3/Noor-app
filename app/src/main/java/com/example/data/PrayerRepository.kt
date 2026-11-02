@@ -23,13 +23,9 @@ class PrayerRepository(private val prayerDao: PrayerDao) {
         prayerDao.getAthkaarForDate(dateIso)
 
     suspend fun ensureInitialized(todayIso: String) {
-        // 1. Remove legacy top-pinned neighborhood entries and upsert the alphabetical world city catalog
-        val legacyIds = listOf(
-            "bapujinagar_blr", "frazer_town_blr", "shivajinagar_blr",
-            "jayanagar_blr", "whitefield_blr", "bhatkal", "hubballi",
-            "kalaburagi", "belagavi", "tumakuru", "shivamogga", "davangere"
-        )
-        prayerDao.deleteLocalCitiesByIds(legacyIds)
+        // 1. Prune any unrecognized pre-seeded entries and upsert the alphabetical world city catalog
+        val validPredefinedIds = PrayerTimeCalculator.PredefinedCities.map { it.id }
+        prayerDao.pruneUnrecognizedPreseededCities(validPredefinedIds)
 
         val sqlCities = PrayerTimeCalculator.PredefinedCities.map { city ->
             LocalCityEntity(
@@ -46,7 +42,14 @@ class PrayerRepository(private val prayerDao: PrayerDao) {
         // 2. Seed UserPreferencesEntity with timezone-detected default city, X=15m, Y=20m buffers, and firstLaunchEpochMs
         val nowEpochMs = System.currentTimeMillis()
         val currentPrefs = prayerDao.getUserPreferencesSync()
-        if (currentPrefs == null || currentPrefs.selectedCityId in legacyIds) {
+        val isRecognizedSelection = currentPrefs != null && (
+            currentPrefs.useGpsLocation ||
+            currentPrefs.selectedCityId in validPredefinedIds ||
+            currentPrefs.selectedCityId.startsWith("gps_") ||
+            currentPrefs.selectedCityId.startsWith("nom_") ||
+            currentPrefs.selectedCityId.startsWith("custom_")
+        )
+        if (currentPrefs == null || !isRecognizedSelection) {
             val defaultCity = PrayerTimeCalculator.detectBestDefaultCityForDeviceTimeZone()
             prayerDao.upsertUserPreferences(
                 UserPreferencesEntity(
