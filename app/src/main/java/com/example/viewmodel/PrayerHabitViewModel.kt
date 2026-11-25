@@ -26,6 +26,7 @@ import com.example.notification.ExactPrayerAlarmScheduler
 import com.example.notification.PrayerNaggingForegroundService
 import com.example.notification.PrayerNotificationHelper
 import com.example.ui.theme.AppThemeMode
+import com.example.ui.theme.HeroCardStyle
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -142,7 +143,8 @@ data class PrayerDashboardUiState(
     val pendingQazaPrayerNames: List<String> = emptyList(),
     val autoSilenceDuringJamaah: Boolean = true,
     val canScheduleExactAlarms: Boolean = true,
-    val themeMode: AppThemeMode = AppThemeMode.SYSTEM_AUTO
+    val themeMode: AppThemeMode = AppThemeMode.SYSTEM_AUTO,
+    val heroCardStyle: HeroCardStyle = HeroCardStyle.WAVE_CARD
 )
 
 class PrayerHabitViewModel(
@@ -170,6 +172,7 @@ class PrayerHabitViewModel(
 
     private var searchJob: Job? = null
     private var gpsJob: Job? = null
+    private var bannerJob: Job? = null
 
     @Volatile
     private var currentEffectiveDateIso: String = computeEffectiveDateIso(defaultInitialCity)
@@ -1266,7 +1269,8 @@ class PrayerHabitViewModel(
             pendingQazaPrayerNames = pendingQazaNames,
             autoSilenceDuringJamaah = ctrl.alarmRuntime.autoSilenceDuringJamaah,
             canScheduleExactAlarms = alarmScheduler.canScheduleExactAlarms(),
-            themeMode = AppThemeMode.fromStoredName(ctrl.alarmRuntime.themeMode)
+            themeMode = AppThemeMode.fromStoredName(ctrl.alarmRuntime.themeMode),
+            heroCardStyle = HeroCardStyle.fromStoredName(ctrl.alarmRuntime.heroCardStyle)
         )
     }
 
@@ -1526,6 +1530,13 @@ class PrayerHabitViewModel(
     fun cycleThemeMode() {
         val next = uiState.value.themeMode.nextCycle()
         updateThemeMode(next)
+    }
+
+    fun updateHeroCardStyle(style: HeroCardStyle) {
+        viewModelScope.launch {
+            alarmDataStore.setHeroCardStyle(style.name)
+            showTransientBanner("Hero style: ${style.displayName}")
+        }
     }
 
     fun adjustQazaBacklogCount(delta: Int) {
@@ -1902,9 +1913,10 @@ class PrayerHabitViewModel(
     }
 
     fun showTransientBanner(message: String) {
-        viewModelScope.launch {
+        bannerJob?.cancel()
+        bannerJob = viewModelScope.launch {
             _statusBannerMessage.value = message
-            delay(3200L)
+            delay(3400L)
             if (_statusBannerMessage.value == message) {
                 _statusBannerMessage.value = null
             }

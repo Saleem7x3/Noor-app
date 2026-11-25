@@ -40,7 +40,8 @@ data class AlarmLoopRuntimeState(
     val savedCityTzOffset: Double? = null,
     val savedCityIsGps: Boolean = false,
     val lastAthkaarDateIso: String? = null,
-    val themeMode: String = "SYSTEM_AUTO"
+    val themeMode: String = "SYSTEM_AUTO",
+    val heroCardStyle: String = "WAVE_CARD"
 )
 
 class PrayerAlarmDataStore(private val context: Context) {
@@ -67,6 +68,7 @@ class PrayerAlarmDataStore(private val context: Context) {
         val SAVED_CITY_IS_GPS = booleanPreferencesKey("saved_city_is_gps")
         val LAST_ATHKAAR_DATE_ISO = stringPreferencesKey("last_athkaar_date_iso")
         val THEME_MODE = stringPreferencesKey("app_theme_mode")
+        val HERO_CARD_STYLE = stringPreferencesKey("hero_card_style")
     }
 
     val runtimeStateFlow: Flow<AlarmLoopRuntimeState> = context.prayerAlarmDataStore.data.map { prefs ->
@@ -92,7 +94,8 @@ class PrayerAlarmDataStore(private val context: Context) {
             savedCityTzOffset = prefs[Keys.SAVED_CITY_TZ_OFFSET],
             savedCityIsGps = prefs[Keys.SAVED_CITY_IS_GPS] ?: false,
             lastAthkaarDateIso = prefs[Keys.LAST_ATHKAAR_DATE_ISO]?.takeIf { it.isNotBlank() },
-            themeMode = prefs[Keys.THEME_MODE]?.takeIf { it.isNotBlank() } ?: "SYSTEM_AUTO"
+            themeMode = prefs[Keys.THEME_MODE]?.takeIf { it.isNotBlank() } ?: "SYSTEM_AUTO",
+            heroCardStyle = prefs[Keys.HERO_CARD_STYLE]?.takeIf { it.isNotBlank() } ?: "WAVE_CARD"
         )
     }
 
@@ -163,6 +166,12 @@ class PrayerAlarmDataStore(private val context: Context) {
     suspend fun setThemeMode(modeName: String) {
         context.prayerAlarmDataStore.edit { prefs ->
             prefs[Keys.THEME_MODE] = modeName
+        }
+    }
+
+    suspend fun setHeroCardStyle(styleName: String) {
+        context.prayerAlarmDataStore.edit { prefs ->
+            prefs[Keys.HERO_CARD_STYLE] = styleName
         }
     }
 

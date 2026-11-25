@@ -54,6 +54,7 @@ import com.example.ui.components.AppleSegmentedControl
 import com.example.ui.components.SwissInsetGroup
 import com.example.ui.components.SwissSectionLabel
 import com.example.ui.theme.AppThemeMode
+import com.example.ui.theme.HeroCardStyle
 import com.example.ui.theme.NoorTheme
 import com.example.ui.theme.asMonoPrecision
 import com.example.viewmodel.PrayerDashboardUiState
@@ -74,6 +75,7 @@ fun ArchitectureBlueprintScreenContent(
     onUpdateAutoJamaahWindow: (Int) -> Unit = {},
     onUpdateAutoSilenceDuringJamaah: (Boolean) -> Unit = {},
     onUpdateThemeMode: (AppThemeMode) -> Unit = {},
+    onUpdateHeroCardStyle: (HeroCardStyle) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -237,6 +239,35 @@ fun ArchitectureBlueprintScreenContent(
                     )
                     Text(
                         text = "Follows system appearance or locks to warm light or true OLED black.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.inkSecondary
+                    )
+                }
+
+                AppleHairlineDivider(modifier = Modifier.padding(horizontal = 16.dp))
+
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "Prayer Hero Style",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = colors.inkPrimary,
+                        fontWeight = FontWeight.Medium
+                    )
+                    AppleSegmentedControl(
+                        options = listOf(
+                            HeroCardStyle.WAVE_CARD to "Wave Card",
+                            HeroCardStyle.MINIMAL_EDITORIAL to "Minimal"
+                        ),
+                        selected = uiState.heroCardStyle,
+                        onSelect = onUpdateHeroCardStyle,
+                        optionTagPrefix = "hero_style_option",
+                        modifier = Modifier.testTag("settings_hero_style_segmented_control")
+                    )
+                    Text(
+                        text = "Framed card with calm animated solar waves or borderless editorial typography.",
                         style = MaterialTheme.typography.bodySmall,
                         color = colors.inkSecondary
                     )

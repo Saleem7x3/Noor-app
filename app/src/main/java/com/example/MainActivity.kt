@@ -144,7 +144,8 @@ class MainActivity : ComponentActivity() {
                     onUpdateHistoricalPrayer = viewModel::updateHistoricalPrayerRecord,
                     onUpdateAutoSilenceDuringJamaah = viewModel::updateAutoSilenceDuringJamaah,
                     onUpdateThemeMode = viewModel::updateThemeMode,
-                    onCycleThemeMode = viewModel::cycleThemeMode
+                    onCycleThemeMode = viewModel::cycleThemeMode,
+                    onUpdateHeroCardStyle = viewModel::updateHeroCardStyle
                 )
             }
         }

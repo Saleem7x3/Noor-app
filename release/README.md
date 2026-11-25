@@ -11,7 +11,8 @@ Pushing an updated `.apk` in this directory to `main` or `master` (or running th
 
 ## Latest Build Highlights
 
-- **Editorial Swiss Minimal UI**: Open typographic active-prayer hero directly on the canvas, single grouped inset surfaces with crisp `0.5dp` hairline dividers, and decluttered monochrome-first visual hierarchy.
+- **Bottom Dynamic Island Alert Squircle**: All in-app alerts—persistent Qaza Pending (`Log 1`), locked prayer notices, status feedback, and the 4-second Undo prompt—live in a single floating squircle directly above the **Prayers** and **Analytics** dock buttons and morph smoothly in place.
+- **Switchable Wave / Minimal Hero Card**: Restored the calm, multi-layered animated **Wave Card** hero as the default, with a persisted **Settings → Appearance** toggle to switch instantaneously to the borderless **Minimal Editorial** hero.
 - **Dual Themes**: Seamless switching between **System Auto**, **Apple White**, and true **OLED Dark** via Settings or the header quick toggle.
 - **Bundled Editorial Typography**: Locally bundled **DM Sans**, **IBM Plex Mono** (tabular numerals), and **Amiri** Arabic calligraphy.
 - **Astronomical Accuracy**: Muslim World League (MWL 18°/17°) calculation, true solar Islamic midnight tracking (keeping late-night Isha active until Fajr), Friday Jumu'ah override, and collapsible Makruh solar warnings.

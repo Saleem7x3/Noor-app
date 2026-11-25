@@ -24,6 +24,19 @@ enum class AppThemeMode(val shortLabel: String, val displayName: String) {
 }
 
 /**
+ * User-selectable Prayers Hero presentation style persisted in DataStore.
+ */
+enum class HeroCardStyle(val shortLabel: String, val displayName: String) {
+    WAVE_CARD("Wave Card", "Wave Card"),
+    MINIMAL_EDITORIAL("Minimal", "Minimal Editorial");
+
+    companion object {
+        fun fromStoredName(raw: String?): HeroCardStyle =
+            entries.firstOrNull { it.name == raw } ?: WAVE_CARD
+    }
+}
+
+/**
  * Editorial Swiss Minimal dual-theme palette (Warm Architectural White Light + True OLED Dark)
  * built for calm monochrome-first hierarchy (90%+ canvas & ink) with restrained Gold, Emerald,
  * and Vermilion functional accents.

@@ -2,14 +2,12 @@ package com.example.ui.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
@@ -27,13 +25,13 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -43,6 +41,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -59,15 +63,18 @@ import com.example.data.PrayerCompletionStatus
 import com.example.data.PrayerItemUiModel
 import com.example.domain.CityLocation
 import com.example.ui.components.AppleFloatingGlassDock
+import com.example.ui.components.BottomSquircleAlertIsland
+import com.example.ui.components.BottomSquircleAlertState
 import com.example.ui.components.SwissInsetGroup
 import com.example.ui.components.appleSpringClickable
 import com.example.ui.theme.AppThemeMode
+import com.example.ui.theme.HeroCardStyle
 import com.example.ui.theme.IbmPlexMonoFontFamily
 import com.example.ui.theme.NoorTheme
-import com.example.ui.theme.withTabularDigits
 import com.example.viewmodel.ActiveTab
 import com.example.viewmodel.AppDisplayMode
 import com.example.viewmodel.PrayerDashboardUiState
+import kotlinx.coroutines.delay
 
 @Composable
 fun NoorPrayerAppRoot(
@@ -101,10 +108,26 @@ fun NoorPrayerAppRoot(
     onUpdateHistoricalPrayer: (String, String, String, Boolean, Boolean, PrayerCompletionStatus) -> Unit = { _, _, _, _, _, _ -> },
     onUpdateAutoSilenceDuringJamaah: (Boolean) -> Unit = {},
     onUpdateThemeMode: (AppThemeMode) -> Unit = {},
-    onCycleThemeMode: () -> Unit = {}
+    onCycleThemeMode: () -> Unit = {},
+    onUpdateHeroCardStyle: (HeroCardStyle) -> Unit = {}
 ) {
     val haptics = LocalHapticFeedback.current
     val colors = NoorTheme.colors
+
+    var undoUncheckPrayer by remember { mutableStateOf<PrayerItemUiModel?>(null) }
+    var undoPreviousInJamaah by remember { mutableStateOf(true) }
+    var undoSecondsRemaining by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(undoUncheckPrayer) {
+        if (undoUncheckPrayer != null) {
+            undoSecondsRemaining = 4
+            while (undoSecondsRemaining > 0) {
+                delay(1000L)
+                undoSecondsRemaining -= 1
+            }
+            undoUncheckPrayer = null
+        }
+    }
 
     BackHandler(
         enabled = uiState.displayMode == AppDisplayMode.INTERACTIVE_SINGLE_SCREEN ||
@@ -125,6 +148,39 @@ fun NoorPrayerAppRoot(
         uiState.totalQazaBacklogCount
     }
     val analyticsTabQazaBadgeCount = uiState.totalQazaBacklogCount
+    val hasPendingQaza = uiState.todayQadaCount > 0 || uiState.totalQazaBacklogCount > 0
+
+    // Priority-ordered Dynamic Island state for the floating bottom squircle:
+    // 1. 4-second Undo uncheck -> 2. Transient locked prayer / status notice -> 3. Persistent Qaza Pending
+    val activeUndoTarget = undoUncheckPrayer
+    val activeStatusMessage = uiState.statusBannerMessage?.takeIf { it.isNotBlank() }
+    val bottomSquircleState: BottomSquircleAlertState = when {
+        activeUndoTarget != null -> BottomSquircleAlertState.UndoUncheck(
+            prayerName = activeUndoTarget.nameEnglish,
+            secondsRemaining = undoSecondsRemaining.coerceAtLeast(1)
+        )
+        activeStatusMessage != null -> {
+            val isWarningTone = activeStatusMessage.contains("only be marked", ignoreCase = true) ||
+                activeStatusMessage.contains("unlocks at", ignoreCase = true) ||
+                activeStatusMessage.contains("auto-marked", ignoreCase = true) ||
+                activeStatusMessage.contains("disabled", ignoreCase = true)
+            BottomSquircleAlertState.StatusNotice(
+                message = activeStatusMessage,
+                isWarning = isWarningTone
+            )
+        }
+        hasPendingQaza -> BottomSquircleAlertState.QazaPending(
+            totalCount = uiState.totalQazaBacklogCount,
+            pendingNames = uiState.pendingQazaPrayerNames
+        )
+        else -> BottomSquircleAlertState.Hidden
+    }
+
+    val bottomScrollClearance by animateDpAsState(
+        targetValue = if (bottomSquircleState !is BottomSquircleAlertState.Hidden) 168.dp else 108.dp,
+        animationSpec = tween(220),
+        label = "bottom_scroll_clearance"
+    )
 
     Box(
         modifier = Modifier
@@ -136,121 +192,6 @@ fun NoorPrayerAppRoot(
                 .fillMaxSize()
                 .windowInsetsPadding(WindowInsets.statusBars)
         ) {
-            // Distilled editorial Qaza reminder strip (flat hairline, zero icon-tile clutter)
-            val hasPendingQaza = uiState.todayQadaCount > 0 || uiState.totalQazaBacklogCount > 0
-            AnimatedVisibility(
-                visible = hasPendingQaza,
-                enter = expandVertically() + fadeIn(tween(180)),
-                exit = shrinkVertically() + fadeOut(tween(150))
-            ) {
-                val pendingNamesStr = if (uiState.pendingQazaPrayerNames.isNotEmpty()) {
-                    "Today: ${uiState.pendingQazaPrayerNames.joinToString(", ")}"
-                } else {
-                    "${uiState.totalQazaBacklogCount} missed prayer${if (uiState.totalQazaBacklogCount == 1) "" else "s"} pending"
-                }
-                Surface(
-                    color = colors.surfaceCard,
-                    shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(0.5.dp, colors.accentCoral.copy(alpha = 0.45f)),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 18.dp, vertical = 4.dp)
-                        .testTag("persistent_qaza_top_banner")
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(7.dp)
-                                    .clip(CircleShape)
-                                    .background(colors.accentCoral)
-                            )
-                            Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                                Text(
-                                    text = "Qaza Pending · ${uiState.totalQazaBacklogCount}",
-                                    style = MaterialTheme.typography.labelLarge.withTabularDigits(),
-                                    color = colors.accentCoral,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                Text(
-                                    text = pendingNamesStr,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = colors.inkSecondary,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-
-                        Text(
-                            text = "Log 1",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = colors.accentEmerald,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .appleSpringClickable(shape = RoundedCornerShape(8.dp)) {
-                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    onAdjustQazaBacklog(-1)
-                                }
-                                .padding(horizontal = 10.dp, vertical = 6.dp)
-                                .testTag("qaza_top_banner_log_one_button"),
-                            maxLines = 1,
-                            softWrap = false
-                        )
-                    }
-                }
-            }
-
-            // Quiet flat status feedback strip
-            AnimatedVisibility(
-                visible = uiState.statusBannerMessage != null,
-                enter = expandVertically() + fadeIn(tween(180)),
-                exit = shrinkVertically() + fadeOut(tween(150))
-            ) {
-                Surface(
-                    color = colors.surfaceCard,
-                    shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(0.5.dp, colors.hairlineStrong),
-                    shadowElevation = 0.dp,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 18.dp, vertical = 4.dp)
-                        .testTag("transient_status_banner")
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(9.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(6.dp)
-                                .clip(CircleShape)
-                                .background(colors.accentGold)
-                        )
-                        Text(
-                            text = uiState.statusBannerMessage.orEmpty(),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = colors.inkPrimary,
-                            fontWeight = FontWeight.Medium,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-            }
-
             if (uiState.displayMode == AppDisplayMode.SHOWCASE_3_SCREENS) {
                 ThreeScreenShowcaseDeck(
                     uiState = uiState,
@@ -277,7 +218,8 @@ fun NoorPrayerAppRoot(
                     onToggleCountdownMode = onToggleCountdownMode,
                     onUpdateRepeatInterval = onUpdateRepeatInterval,
                     onUpdateThemeMode = onUpdateThemeMode,
-                    onCycleThemeMode = onCycleThemeMode
+                    onCycleThemeMode = onCycleThemeMode,
+                    onUpdateHeroCardStyle = onUpdateHeroCardStyle
                 )
             } else {
                 // Critically damped Swiss horizontal glide between tabs
@@ -306,7 +248,7 @@ fun NoorPrayerAppRoot(
                         modifier = Modifier
                             .fillMaxSize()
                             .verticalScroll(verticalScroll)
-                            .padding(start = 18.dp, end = 18.dp, top = 8.dp, bottom = 108.dp),
+                            .padding(start = 18.dp, end = 18.dp, top = 8.dp, bottom = bottomScrollClearance),
                         contentAlignment = Alignment.TopCenter
                     ) {
                         Box(modifier = Modifier.widthIn(max = 560.dp)) {
@@ -364,6 +306,15 @@ fun NoorPrayerAppRoot(
                                         onDismissJamaahDialog = onDismissJamaahDialog,
                                         onToggleCountdownMode = onToggleCountdownMode,
                                         onCycleThemeMode = onCycleThemeMode,
+                                        onPrayerUnchecked = { prayer, prevInJamaah ->
+                                            undoPreviousInJamaah = prevInJamaah
+                                            undoUncheckPrayer = prayer
+                                        },
+                                        onClearUndoForPrayer = { prayerId ->
+                                            if (undoUncheckPrayer?.id == prayerId) {
+                                                undoUncheckPrayer = null
+                                            }
+                                        },
                                         isCompactShowcase = false
                                     )
                                 }
@@ -411,7 +362,8 @@ fun NoorPrayerAppRoot(
                                             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                             onUpdateAutoSilenceDuringJamaah(enabled)
                                         },
-                                        onUpdateThemeMode = onUpdateThemeMode
+                                        onUpdateThemeMode = onUpdateThemeMode,
+                                        onUpdateHeroCardStyle = onUpdateHeroCardStyle
                                     )
                                 }
                             }
@@ -421,15 +373,40 @@ fun NoorPrayerAppRoot(
             }
         }
 
-        // Refined Swiss minimal floating navigation dock
+        // Unified Bottom Overlay: Dynamic Island Alert Squircle (spanning Prayers <-> Analytics) + Floating Dock
         if (uiState.displayMode == AppDisplayMode.INTERACTIVE_SINGLE_SCREEN) {
-            AppleFloatingGlassDock(
-                activeTab = uiState.activeTab,
-                prayersQazaBadgeCount = prayersTabQazaBadgeCount,
-                analyticsQazaBadgeCount = analyticsTabQazaBadgeCount,
-                onSelectTab = onSelectTab,
-                modifier = Modifier.align(Alignment.BottomCenter)
-            )
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 20.dp, vertical = 10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                BottomSquircleAlertIsland(
+                    state = bottomSquircleState,
+                    onLogOneQaza = { onAdjustQazaBacklog(-1) },
+                    onUndoUncheck = {
+                        val target = undoUncheckPrayer
+                        if (target != null) {
+                            val latestItem = uiState.prayers.firstOrNull { it.id == target.id } ?: target
+                            if (!latestItem.isPrayed) {
+                                onTogglePrayerCompletedWithMode(latestItem, undoPreviousInJamaah)
+                            }
+                            undoUncheckPrayer = null
+                        }
+                    }
+                )
+
+                AppleFloatingGlassDock(
+                    activeTab = uiState.activeTab,
+                    prayersQazaBadgeCount = prayersTabQazaBadgeCount,
+                    analyticsQazaBadgeCount = analyticsTabQazaBadgeCount,
+                    onSelectTab = onSelectTab,
+                    applyOuterInsetsAndPadding = false
+                )
+            }
         }
     }
 }
@@ -457,7 +434,8 @@ private fun ThreeScreenShowcaseDeck(
     onToggleCountdownMode: () -> Unit = {},
     onUpdateRepeatInterval: (Int, Int, Int, Int) -> Unit = { _, _, _, _ -> },
     onUpdateThemeMode: (AppThemeMode) -> Unit = {},
-    onCycleThemeMode: () -> Unit = {}
+    onCycleThemeMode: () -> Unit = {},
+    onUpdateHeroCardStyle: (HeroCardStyle) -> Unit = {}
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val isWidePresentation = maxWidth >= 860.dp
@@ -548,7 +526,8 @@ private fun ThreeScreenShowcaseDeck(
                         onSimulateQadaRollover = onSimulateQadaRollover,
                         onMarkFeaturedAsPrayed = onMarkFeaturedAsPrayed,
                         onUpdateNotificationSettings = onUpdateRepeatInterval,
-                        onUpdateThemeMode = onUpdateThemeMode
+                        onUpdateThemeMode = onUpdateThemeMode,
+                        onUpdateHeroCardStyle = onUpdateHeroCardStyle
                     )
                 }
             }
@@ -663,7 +642,8 @@ private fun ThreeScreenShowcaseDeck(
                         onSimulateQadaRollover = onSimulateQadaRollover,
                         onMarkFeaturedAsPrayed = onMarkFeaturedAsPrayed,
                         onUpdateNotificationSettings = onUpdateRepeatInterval,
-                        onUpdateThemeMode = onUpdateThemeMode
+                        onUpdateThemeMode = onUpdateThemeMode,
+                        onUpdateHeroCardStyle = onUpdateHeroCardStyle
                     )
                 }
 

@@ -3,11 +3,14 @@ package com.example.ui.screens
 import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -36,16 +39,13 @@ import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Mosque
-import androidx.compose.material.icons.rounded.Undo
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -73,17 +73,18 @@ import com.example.data.SolarWarningItemUiModel
 import com.example.domain.CityLocation
 import com.example.domain.PrayerTimeCalculator
 import com.example.ui.components.AppleHairlineDivider
+import com.example.ui.components.HeroWaveBackdropCanvas
 import com.example.ui.components.SwissInsetGroup
 import com.example.ui.components.SwissSectionLabel
 import com.example.ui.components.appleSpringClickable
 import com.example.ui.theme.AmiriFontFamily
 import com.example.ui.theme.AppThemeMode
+import com.example.ui.theme.HeroCardStyle
 import com.example.ui.theme.IbmPlexMonoFontFamily
 import com.example.ui.theme.NoorTheme
 import com.example.ui.theme.asMonoPrecision
 import com.example.ui.theme.withTabularDigits
 import com.example.viewmodel.PrayerDashboardUiState
-import kotlinx.coroutines.delay
 
 @Composable
 fun PrayerHomeScreenContent(
@@ -106,6 +107,8 @@ fun PrayerHomeScreenContent(
     },
     onToggleCountdownMode: () -> Unit = {},
     onCycleThemeMode: () -> Unit = {},
+    onPrayerUnchecked: (PrayerItemUiModel, Boolean) -> Unit = { _, _ -> },
+    onClearUndoForPrayer: (String) -> Unit = {},
     modifier: Modifier = Modifier,
     isCompactShowcase: Boolean = false
 ) {
@@ -114,21 +117,7 @@ fun PrayerHomeScreenContent(
 
     var showLocationSearchModal by remember { mutableStateOf(false) }
     var isSolarBannerExpanded by remember { mutableStateOf(false) }
-    var undoUncheckPrayer by remember { mutableStateOf<PrayerItemUiModel?>(null) }
-    var undoPreviousInJamaah by remember { mutableStateOf(true) }
-    var undoSecondsRemaining by remember { mutableIntStateOf(0) }
     var pendingCompletionPrayer by remember { mutableStateOf<PrayerItemUiModel?>(null) }
-
-    LaunchedEffect(undoUncheckPrayer) {
-        if (undoUncheckPrayer != null) {
-            undoSecondsRemaining = 4
-            while (undoSecondsRemaining > 0) {
-                delay(1000L)
-                undoSecondsRemaining -= 1
-            }
-            undoUncheckPrayer = null
-        }
-    }
 
     val featuredPrayer = uiState.featuredPrayer
     val featuredAdhan = featuredPrayer?.let { PrayerTimeCalculator.formatMinutesTo12Hour(it.adhanMinutes) } ?: "03:45 PM"
@@ -363,310 +352,83 @@ fun PrayerHomeScreenContent(
                 }
             }
 
-            // 2. Open Typographic Hero directly on canvas (NO BOX, NO GRADIENT, NO GLOW WAVES)
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = if (isTightDisplay) 4.dp else 8.dp, bottom = 2.dp)
-                    .testTag("hero_current_prayer_card"),
-                verticalArrangement = Arrangement.spacedBy(if (isTightDisplay) 12.dp else 16.dp)
-            ) {
-                // Eyebrow Status (Left) & Quiet Solar Marker (Right)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(7.dp),
-                        modifier = Modifier.weight(1f, fill = false)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(6.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    if (uiState.isUrgentEndOfWindow || uiState.isIshaMissedAfterMidnight) {
-                                        colors.accentCoral
-                                    } else {
-                                        colors.accentGold
-                                    }
-                                )
-                        )
-                        Text(
-                            text = uiState.heroHeaderStatusLabel.uppercase(),
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontFamily = IbmPlexMonoFontFamily,
-                                letterSpacing = 1.1.sp
-                            ),
-                            fontSize = if (isTightDisplay) 10.sp else 10.5.sp,
-                            color = if (uiState.isUrgentEndOfWindow || uiState.isIshaMissedAfterMidnight) {
-                                colors.accentCoral
-                            } else {
-                                colors.accentGold
-                            },
-                            fontWeight = FontWeight.Medium,
-                            maxLines = 1,
-                            softWrap = false,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    Text(
-                        text = uiState.heroSolarBadgeText,
-                        style = MaterialTheme.typography.labelSmall.asMonoPrecision(),
-                        fontSize = if (isTightDisplay) 10.sp else 10.5.sp,
-                        color = colors.inkTertiary,
-                        maxLines = 1,
-                        softWrap = false
-                    )
+            // 2. Switchable Hero Presentation: Wave Card (Default) <-> Minimal Editorial Open
+            AnimatedContent(
+                targetState = uiState.heroCardStyle,
+                transitionSpec = {
+                    fadeIn(tween(220)).togetherWith(fadeOut(tween(160)))
+                },
+                label = "prayer_hero_style_transition"
+            ) { heroStyle ->
+                val isUrgentHero = uiState.isUrgentEndOfWindow || uiState.isIshaMissedAfterMidnight
+                val wavePrimaryTint = when {
+                    isUrgentHero -> colors.accentCoral
+                    uiState.isAllTodayPrayersCompleted -> colors.accentEmerald
+                    else -> colors.accentGold
+                }
+                val waveSecondaryTint = when {
+                    isUrgentHero -> colors.accentGold
+                    uiState.isAllTodayPrayersCompleted -> colors.accentGold
+                    else -> colors.accentEmerald
                 }
 
-                // Oversized Swiss Display Prayer Title + Quiet Arabic + Live Countdown
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.Bottom,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Text(
-                            text = featuredPrayer?.nameEnglish ?: "Asr",
-                            style = MaterialTheme.typography.displayLarge,
-                            fontSize = if (isTightDisplay) 40.sp else 48.sp,
-                            lineHeight = if (isTightDisplay) 44.sp else 52.sp,
-                            color = colors.inkPrimary,
-                            fontWeight = FontWeight.Medium,
-                            maxLines = 1,
-                            softWrap = false
-                        )
-                        Text(
-                            text = featuredPrayer?.nameArabic ?: "العصر",
-                            style = MaterialTheme.typography.headlineSmall.copy(fontFamily = AmiriFontFamily),
-                            fontSize = if (isTightDisplay) 23.sp else 27.sp,
-                            color = colors.accentGold,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            softWrap = false,
-                            modifier = Modifier.padding(bottom = 5.dp)
-                        )
-                    }
-
-                    Text(
-                        text = uiState.heroCountdownSubtitleText,
-                        style = MaterialTheme.typography.titleLarge.withTabularDigits(),
-                        fontSize = if (isTightDisplay) 17.sp else 20.sp,
-                        color = when {
-                            uiState.isUrgentEndOfWindow || uiState.isIshaMissedAfterMidnight -> colors.accentCoral
-                            uiState.isJamaahTimePassed -> colors.accentGold
-                            else -> colors.inkSecondary
-                        },
-                        fontWeight = FontWeight.Normal,
-                        maxLines = 1,
-                        softWrap = false,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.testTag("hero_countdown_status_text")
-                    )
-                }
-
-                // Ultra-thin 2dp edge-to-edge window hairline progress bar
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(2.dp)
-                        .background(colors.hairline)
-                ) {
-                    if (heroProgressFraction > 0f) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxHeight()
-                                .fillMaxWidth(heroProgressFraction)
-                                .background(
-                                    if (uiState.isUrgentEndOfWindow || uiState.isIshaMissedAfterMidnight) {
-                                        colors.accentCoral
-                                    } else {
-                                        colors.accentGold
-                                    }
-                                )
-                        )
-                    }
-                }
-
-                // Borderless 3-column Horological Schedule Strip
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.Top
-                ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(
-                            text = uiState.heroLeftTimeLabel.uppercase(),
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontFamily = IbmPlexMonoFontFamily,
-                                letterSpacing = 0.8.sp
-                            ),
-                            fontSize = 9.5.sp,
-                            color = colors.inkTertiary
-                        )
-                        Text(
-                            text = uiState.heroLeftTimeValue.ifEmpty { featuredAdhan },
-                            style = MaterialTheme.typography.titleMedium.asMonoPrecision(),
-                            fontSize = if (isTightDisplay) 13.5.sp else 15.sp,
-                            color = colors.inkPrimary,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-
-                    // Tappable Jama'ah Column (edits Jama'ah cleanly without pill box)
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .appleSpringClickable(shape = RoundedCornerShape(8.dp)) {
-                                featuredPrayer?.let { onEditJamaahClicked(it) }
-                            }
-                            .padding(horizontal = 8.dp, vertical = 2.dp)
-                            .testTag("hero_jamaah_pill")
-                    ) {
-                        Text(
-                            text = if (featuredPrayer?.settingsKey == "JUMUAH") "JUMU'AH ✎" else "JAMA'AH ✎",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontFamily = IbmPlexMonoFontFamily,
-                                letterSpacing = 0.8.sp
-                            ),
-                            fontSize = 9.5.sp,
-                            color = colors.accentGold
-                        )
-                        Text(
-                            text = featuredJamaah,
-                            style = MaterialTheme.typography.titleMedium.asMonoPrecision(),
-                            fontSize = if (isTightDisplay) 13.5.sp else 15.sp,
-                            color = colors.accentGold,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-
-                    Column(
-                        horizontalAlignment = Alignment.End,
-                        verticalArrangement = Arrangement.spacedBy(2.dp)
-                    ) {
-                        Text(
-                            text = "ENDS",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontFamily = IbmPlexMonoFontFamily,
-                                letterSpacing = 0.8.sp
-                            ),
-                            fontSize = 9.5.sp,
-                            color = colors.inkTertiary
-                        )
-                        Text(
-                            text = featuredEnd,
-                            style = MaterialTheme.typography.titleMedium.asMonoPrecision(),
-                            fontSize = if (isTightDisplay) 13.5.sp else 15.sp,
-                            color = colors.inkSecondary,
-                            fontWeight = FontWeight.Normal
-                        )
-                    }
-                }
-
-                // Late-night unprayed Isha quick action (only shown when active)
-                if (uiState.isIshaMissedAfterMidnight && featuredPrayer != null && !featuredPrayer.isPrayed) {
+                if (heroStyle == HeroCardStyle.WAVE_CARD) {
                     Surface(
-                        color = colors.accentEmerald,
-                        shape = RoundedCornerShape(10.dp),
+                        color = colors.surfaceCard,
+                        shape = RoundedCornerShape(22.dp),
+                        border = BorderStroke(
+                            0.5.dp,
+                            if (isUrgentHero) colors.accentCoral.copy(alpha = 0.45f) else colors.hairlineStrong.copy(alpha = 0.7f)
+                        ),
+                        shadowElevation = if (colors.isDark) 0.dp else 2.dp,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .appleSpringClickable(shape = RoundedCornerShape(10.dp)) {
-                                pendingCompletionPrayer = featuredPrayer
-                            }
-                            .testTag("hero_mark_late_night_isha_button")
+                            .testTag("hero_current_prayer_card")
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 14.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Check,
-                                contentDescription = "Mark Night Isha Prayed",
-                                tint = colors.onAccentEmerald,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Mark Night Isha Prayed",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = colors.onAccentEmerald,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                    }
-                }
-            }
-
-            // 4-Second Undo Strip when unchecking a completed prayer
-            AnimatedVisibility(
-                visible = undoUncheckPrayer != null,
-                enter = expandVertically() + fadeIn(),
-                exit = shrinkVertically() + fadeOut()
-            ) {
-                val targetUndoPrayer = undoUncheckPrayer
-                if (targetUndoPrayer != null) {
-                    SwissInsetGroup(
-                        borderColor = colors.accentGold.copy(alpha = 0.5f),
-                        cornerRadius = 12.dp,
-                        modifier = Modifier.testTag("undo_uncheck_snackbar")
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 14.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Undo,
-                                    contentDescription = "Undo uncheck",
-                                    tint = colors.accentGold,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Text(
-                                    text = "${targetUndoPrayer.nameEnglish} unmarked (${undoSecondsRemaining}s)",
-                                    style = MaterialTheme.typography.bodySmall.withTabularDigits(),
-                                    color = colors.inkPrimary,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-
-                            Text(
-                                text = "Undo",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = colors.accentGold,
-                                fontWeight = FontWeight.SemiBold,
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            HeroWaveBackdropCanvas(
+                                accentColor = wavePrimaryTint,
+                                secondaryColor = waveSecondaryTint,
+                                isDark = colors.isDark,
                                 modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .appleSpringClickable(shape = RoundedCornerShape(8.dp)) {
-                                        val latestItem = uiState.prayers.firstOrNull { it.id == targetUndoPrayer.id } ?: targetUndoPrayer
-                                        if (!latestItem.isPrayed) {
-                                            onTogglePrayerCompletedWithMode(latestItem, undoPreviousInJamaah)
-                                        }
-                                        undoUncheckPrayer = null
-                                    }
-                                    .padding(horizontal = 10.dp, vertical = 4.dp)
-                                    .testTag("undo_uncheck_action_button")
+                                    .matchParentSize()
+                                    .testTag("hero_wave_backdrop_canvas")
+                            )
+                            PrayerHeroInnerContent(
+                                uiState = uiState,
+                                featuredPrayer = featuredPrayer,
+                                featuredAdhan = featuredAdhan,
+                                featuredJamaah = featuredJamaah,
+                                featuredEnd = featuredEnd,
+                                heroProgressFraction = heroProgressFraction,
+                                isTightDisplay = isTightDisplay,
+                                onEditJamaahClicked = onEditJamaahClicked,
+                                onRequestMarkLateIsha = { pendingCompletionPrayer = it },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(
+                                        horizontal = if (isTightDisplay) 16.dp else 20.dp,
+                                        vertical = if (isTightDisplay) 16.dp else 20.dp
+                                    )
                             )
                         }
                     }
+                } else {
+                    PrayerHeroInnerContent(
+                        uiState = uiState,
+                        featuredPrayer = featuredPrayer,
+                        featuredAdhan = featuredAdhan,
+                        featuredJamaah = featuredJamaah,
+                        featuredEnd = featuredEnd,
+                        heroProgressFraction = heroProgressFraction,
+                        isTightDisplay = isTightDisplay,
+                        onEditJamaahClicked = onEditJamaahClicked,
+                        onRequestMarkLateIsha = { pendingCompletionPrayer = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = if (isTightDisplay) 4.dp else 8.dp, bottom = 2.dp)
+                            .testTag("hero_current_prayer_card")
+                    )
                 }
             }
 
@@ -695,8 +457,7 @@ fun PrayerHomeScreenContent(
                             activeProgressFraction = activeProgressFraction,
                             onToggleCompleted = {
                                 if (prayer.isPrayed) {
-                                    undoPreviousInJamaah = prayer.isInJamaah
-                                    undoUncheckPrayer = prayer
+                                    onPrayerUnchecked(prayer, prayer.isInJamaah)
                                     onTogglePrayerCompletedWithMode(prayer, null)
                                 } else if (!prayer.canMarkPrayed) {
                                     onTogglePrayerCompletedWithMode(prayer, null)
@@ -814,9 +575,7 @@ fun PrayerHomeScreenContent(
             isWithinJamaahWindow = isWithinJamaahWindow,
             autoJamaahWindowMinutes = uiState.autoJamaahWindowMinutes,
             onChooseMode = { inJamaah ->
-                if (undoUncheckPrayer?.id == targetCompletionPrayer.id) {
-                    undoUncheckPrayer = null
-                }
+                onClearUndoForPrayer(targetCompletionPrayer.id)
                 onTogglePrayerCompletedWithMode(targetCompletionPrayer, inJamaah)
                 pendingCompletionPrayer = null
             },
@@ -857,6 +616,263 @@ fun PrayerHomeScreenContent(
         onSavePrayerTimeSettings = onSavePrayerTimeSettings,
         onDismissJamaahDialog = onDismissJamaahDialog
     )
+}
+
+@Composable
+private fun PrayerHeroInnerContent(
+    uiState: PrayerDashboardUiState,
+    featuredPrayer: PrayerItemUiModel?,
+    featuredAdhan: String,
+    featuredJamaah: String,
+    featuredEnd: String,
+    heroProgressFraction: Float,
+    isTightDisplay: Boolean,
+    onEditJamaahClicked: (PrayerItemUiModel) -> Unit,
+    onRequestMarkLateIsha: (PrayerItemUiModel) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = NoorTheme.colors
+
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(if (isTightDisplay) 12.dp else 16.dp)
+    ) {
+        // Eyebrow Status (Left) & Quiet Solar Marker (Right)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+                modifier = Modifier.weight(1f, fill = false)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(6.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (uiState.isUrgentEndOfWindow || uiState.isIshaMissedAfterMidnight) {
+                                colors.accentCoral
+                            } else {
+                                colors.accentGold
+                            }
+                        )
+                )
+                Text(
+                    text = uiState.heroHeaderStatusLabel.uppercase(),
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontFamily = IbmPlexMonoFontFamily,
+                        letterSpacing = 1.1.sp
+                    ),
+                    fontSize = if (isTightDisplay) 10.sp else 10.5.sp,
+                    color = if (uiState.isUrgentEndOfWindow || uiState.isIshaMissedAfterMidnight) {
+                        colors.accentCoral
+                    } else {
+                        colors.accentGold
+                    },
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            Text(
+                text = uiState.heroSolarBadgeText,
+                style = MaterialTheme.typography.labelSmall.asMonoPrecision(),
+                fontSize = if (isTightDisplay) 10.sp else 10.5.sp,
+                color = colors.inkTertiary,
+                maxLines = 1,
+                softWrap = false
+            )
+        }
+
+        // Oversized Swiss Display Prayer Title + Quiet Arabic + Live Countdown
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = featuredPrayer?.nameEnglish ?: "Asr",
+                    style = MaterialTheme.typography.displayLarge,
+                    fontSize = if (isTightDisplay) 40.sp else 48.sp,
+                    lineHeight = if (isTightDisplay) 44.sp else 52.sp,
+                    color = colors.inkPrimary,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    softWrap = false
+                )
+                Text(
+                    text = featuredPrayer?.nameArabic ?: "العصر",
+                    style = MaterialTheme.typography.headlineSmall.copy(fontFamily = AmiriFontFamily),
+                    fontSize = if (isTightDisplay) 23.sp else 27.sp,
+                    color = colors.accentGold,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    softWrap = false,
+                    modifier = Modifier.padding(bottom = 5.dp)
+                )
+            }
+
+            Text(
+                text = uiState.heroCountdownSubtitleText,
+                style = MaterialTheme.typography.titleLarge.withTabularDigits(),
+                fontSize = if (isTightDisplay) 17.sp else 20.sp,
+                color = when {
+                    uiState.isUrgentEndOfWindow || uiState.isIshaMissedAfterMidnight -> colors.accentCoral
+                    uiState.isJamaahTimePassed -> colors.accentGold
+                    else -> colors.inkSecondary
+                },
+                fontWeight = FontWeight.Normal,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.testTag("hero_countdown_status_text")
+            )
+        }
+
+        // Ultra-thin 2dp edge-to-edge window hairline progress bar
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(2.dp)
+                .background(colors.hairline)
+        ) {
+            if (heroProgressFraction > 0f) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .fillMaxWidth(heroProgressFraction)
+                        .background(
+                            if (uiState.isUrgentEndOfWindow || uiState.isIshaMissedAfterMidnight) {
+                                colors.accentCoral
+                            } else {
+                                colors.accentGold
+                            }
+                        )
+                )
+            }
+        }
+
+        // Borderless 3-column Horological Schedule Strip
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = uiState.heroLeftTimeLabel.uppercase(),
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontFamily = IbmPlexMonoFontFamily,
+                        letterSpacing = 0.8.sp
+                    ),
+                    fontSize = 9.5.sp,
+                    color = colors.inkTertiary
+                )
+                Text(
+                    text = uiState.heroLeftTimeValue.ifEmpty { featuredAdhan },
+                    style = MaterialTheme.typography.titleMedium.asMonoPrecision(),
+                    fontSize = if (isTightDisplay) 13.5.sp else 15.sp,
+                    color = colors.inkPrimary,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+
+            // Tappable Jama'ah Column
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .appleSpringClickable(shape = RoundedCornerShape(8.dp)) {
+                        featuredPrayer?.let { onEditJamaahClicked(it) }
+                    }
+                    .padding(horizontal = 8.dp, vertical = 2.dp)
+                    .testTag("hero_jamaah_pill")
+            ) {
+                Text(
+                    text = if (featuredPrayer?.settingsKey == "JUMUAH") "JUMU'AH ✎" else "JAMA'AH ✎",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontFamily = IbmPlexMonoFontFamily,
+                        letterSpacing = 0.8.sp
+                    ),
+                    fontSize = 9.5.sp,
+                    color = colors.accentGold
+                )
+                Text(
+                    text = featuredJamaah,
+                    style = MaterialTheme.typography.titleMedium.asMonoPrecision(),
+                    fontSize = if (isTightDisplay) 13.5.sp else 15.sp,
+                    color = colors.accentGold,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = "ENDS",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontFamily = IbmPlexMonoFontFamily,
+                        letterSpacing = 0.8.sp
+                    ),
+                    fontSize = 9.5.sp,
+                    color = colors.inkTertiary
+                )
+                Text(
+                    text = featuredEnd,
+                    style = MaterialTheme.typography.titleMedium.asMonoPrecision(),
+                    fontSize = if (isTightDisplay) 13.5.sp else 15.sp,
+                    color = colors.inkSecondary,
+                    fontWeight = FontWeight.Normal
+                )
+            }
+        }
+
+        // Late-night unprayed Isha quick action (only shown when active)
+        if (uiState.isIshaMissedAfterMidnight && featuredPrayer != null && !featuredPrayer.isPrayed) {
+            Surface(
+                color = colors.accentEmerald,
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .appleSpringClickable(shape = RoundedCornerShape(10.dp)) {
+                        onRequestMarkLateIsha(featuredPrayer)
+                    }
+                    .testTag("hero_mark_late_night_isha_button")
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Check,
+                        contentDescription = "Mark Night Isha Prayed",
+                        tint = colors.onAccentEmerald,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Mark Night Isha Prayed",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = colors.onAccentEmerald,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable
