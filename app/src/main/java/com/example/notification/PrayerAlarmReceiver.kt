@@ -10,6 +10,7 @@ import com.example.data.PrayerRecordEntity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -56,16 +57,75 @@ class PrayerAlarmReceiver : BroadcastReceiver() {
                 val windowEndEpochMs = intent.getLongExtra(ExactPrayerAlarmScheduler.EXTRA_WINDOW_END_EPOCH_MS, 0L)
 
                 when (action) {
+                    Intent.ACTION_BOOT_COMPLETED,
+                    "android.intent.action.LOCKED_BOOT_COMPLETED",
+                    Intent.ACTION_MY_PACKAGE_REPLACED,
+                    Intent.ACTION_TIME_CHANGED,
+                    Intent.ACTION_TIMEZONE_CHANGED,
+                    "android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" -> {
+                        scheduler.syncAndArmAllDailyAlarms(
+                            postActiveWindowNotificationIfNeeded = true
+                        )
+                    }
+
                     ExactPrayerAlarmScheduler.ACTION_MARK_PRAYED -> {
                         val nowMarkMs = System.currentTimeMillis()
                         val existing = dao.getPrayerRecordSync(todayIso, prayerId)
                         val wasQaza = existing?.completionStatus == PrayerCompletionStatus.MISSED_QADA.name
+
+                        val runtimeState = alarmDataStore.runtimeStateFlow.first()
+                        val autoJamaahWindow = runtimeState.autoJamaahWindowMinutes
+                        val repository = com.example.data.PrayerRepository(dao)
+                        val city = alarmDataStore.getSavedCitySnapshot()?.first
+                            ?: repository.getSavedSelectedCity()?.first
+                            ?: com.example.domain.PrayerTimeCalculator.detectBestDefaultCityForDeviceTimeZone()
+                        val cityTz = com.example.domain.PrayerTimeCalculator.getTimeZoneForCity(city)
+                        val nowCal = Calendar.getInstance(cityTz)
+                        val nowMinutesOfDay = nowCal.get(Calendar.HOUR_OF_DAY) * 60 + nowCal.get(Calendar.MINUTE)
+                        val calc = com.example.domain.PrayerTimeCalculator.calculateDailyPrayers(city, nowCal)
+                        val isFriday = nowCal.get(Calendar.DAY_OF_WEEK) == Calendar.FRIDAY
+                        val settingsKey = if (prayerId == "DHUHR" && isFriday) "JUMUAH" else prayerId
+                        val setting = dao.getAllPrayerSettingsSync().firstOrNull { it.prayerId == settingsKey }
+                        val pstMin = when (prayerId) {
+                            "FAJR" -> calc.fajrMinutes
+                            "DHUHR" -> calc.dhuhrMinutes
+                            "ASR" -> calc.asrMinutes
+                            "MAGHRIB" -> calc.maghribMinutes
+                            "ISHA" -> calc.ishaMinutes
+                            else -> calc.asrMinutes
+                        }
+                        val defaultUseFixedAdhan = settingsKey != "MAGHRIB"
+                        val defaultFixedAdhanMin = when (settingsKey) {
+                            "FAJR" -> 5 * 60
+                            "DHUHR" -> 13 * 60
+                            "JUMUAH" -> 13 * 60
+                            "ASR" -> 16 * 60 + 30
+                            "ISHA" -> 20 * 60 + 15
+                            else -> pstMin
+                        }
+                        val adhanMin = if (setting?.useFixedAdhanTime ?: defaultUseFixedAdhan) {
+                            (setting?.fixedAdhanTimeMinutes ?: defaultFixedAdhanMin).coerceIn(0, 1439).coerceAtLeast(pstMin)
+                        } else {
+                            (pstMin + (setting?.adhanOffsetMinutes ?: 0)).coerceAtLeast(pstMin)
+                        }
+                        val jamaahMin = if (setting?.useFixedTime == true) {
+                            setting.fixedTimeMinutes.coerceAtLeast(adhanMin)
+                        } else {
+                            (adhanMin + (setting?.jamaahOffsetMinutes ?: 15)).coerceAtLeast(adhanMin)
+                        }
+
+                        val resolvedInJamaah = when {
+                            wasQaza -> false
+                            autoJamaahWindow <= 0 -> true
+                            else -> kotlin.math.abs(nowMinutesOfDay - jamaahMin) <= autoJamaahWindow
+                        }
+
                         dao.upsertPrayerRecord(
                             PrayerRecordEntity(
                                 dateIso = todayIso,
                                 prayerId = prayerId,
                                 isPrayed = true,
-                                isInJamaah = !wasQaza,
+                                isInJamaah = resolvedInJamaah,
                                 completedAtMillis = nowMarkMs,
                                 completionStatus = if (wasQaza) {
                                     PrayerCompletionStatus.PRAYED_LATE.name
@@ -78,16 +138,46 @@ class PrayerAlarmReceiver : BroadcastReceiver() {
                         scheduler.cancelAllAlarmsForPrayer(prayerId)
                         PrayerNaggingForegroundService.stopNaggingLoop(context)
                         PrayerNotificationHelper.cancelNotification(context)
+                        val modeSuffix = when {
+                            wasQaza -> "(Qaza Make-Up)"
+                            resolvedInJamaah -> "(In Jama'ah)"
+                            else -> "(Individually)"
+                        }
                         alarmDataStore.clearNaggingLoop(
-                            reason = "$prayerName marked as Prayed via Notification Banner ✓",
+                            reason = "$prayerName marked as Prayed $modeSuffix via Notification Banner ✓",
                             stageLabel = if (wasQaza) "PRAYED_LATE" else "PRAYED_ON_TIME"
                         )
+                        scheduler.syncAndArmAllDailyAlarms(postActiveWindowNotificationIfNeeded = false)
                     }
 
                     ExactPrayerAlarmScheduler.ACTION_SNOOZE_5M -> {
-                        // Dismiss/silence if snooze action received
+                        val nextSnoozeEpoch = System.currentTimeMillis() + (5 * 60_000L)
+                        val minUntilJamaah = intent.getIntExtra(ExactPrayerAlarmScheduler.EXTRA_MIN_UNTIL_JAMAAH, 0)
+                        val snoozedStage = if (minUntilJamaah > 5) {
+                            AlarmTriggerType.STAGE_PRE_JAMAAH
+                        } else {
+                            AlarmTriggerType.STAGE_3_POST_JAMAAH_NAG
+                        }
                         scheduler.cancelAllAlarmsForPrayer(prayerId)
+                        scheduler.scheduleExactTrigger(
+                            prayerId = prayerId,
+                            prayerName = prayerName,
+                            dateIso = todayIso,
+                            triggerType = snoozedStage,
+                            triggerAtEpochMillis = nextSnoozeEpoch,
+                            pstTimeFormatted = pstTime,
+                            adhanTimeFormatted = adhanTime,
+                            jamaahTimeFormatted = jamaahTime,
+                            pstEpochMillis = pstEpochMs,
+                            adhanEpochMillis = adhanEpochMs,
+                            jamaahEpochMillis = jamaahEpochMs,
+                            windowEndEpochMillis = windowEndEpochMs,
+                            minutesUntilJamaah = (minUntilJamaah - 5).coerceAtLeast(0),
+                            nagIteration = 1
+                        )
                         PrayerNaggingForegroundService.stopNaggingLoop(context)
+                        PrayerNotificationHelper.cancelNotification(context)
+                        alarmDataStore.recordSnoozeFiveMinutes(prayerId, nextSnoozeEpoch)
                     }
 
                     ExactPrayerAlarmScheduler.ACTION_DISMISS_NAG -> {
@@ -98,6 +188,7 @@ class PrayerAlarmReceiver : BroadcastReceiver() {
                             reason = "$prayerName notification dismissed by user",
                             stageLabel = "DISMISSED"
                         )
+                        scheduler.syncAndArmAllDailyAlarms(postActiveWindowNotificationIfNeeded = false)
                     }
 
                     ExactPrayerAlarmScheduler.ACTION_PRAYER_ALARM_TRIGGER -> {
@@ -123,6 +214,7 @@ class PrayerAlarmReceiver : BroadcastReceiver() {
                                 reason = "$prayerName already marked Prayed • Notifications cancelled",
                                 stageLabel = "PRAYED_ON_TIME"
                             )
+                            scheduler.syncAndArmAllDailyAlarms(postActiveWindowNotificationIfNeeded = false)
                             return@launch
                         }
 
@@ -187,6 +279,7 @@ class PrayerAlarmReceiver : BroadcastReceiver() {
                                 reason = "$prayerName window ended • Auto-marked as Qaza",
                                 stageLabel = "WINDOW_ENDED_QADA"
                             )
+                            scheduler.syncAndArmAllDailyAlarms(postActiveWindowNotificationIfNeeded = false)
                             return@launch
                         }
 
@@ -217,13 +310,14 @@ class PrayerAlarmReceiver : BroadcastReceiver() {
                                     add(AlarmTriggerType.STAGE_JAMAAH_START to effectiveJamaahEpoch)
                                 }
                                 add(AlarmTriggerType.STAGE_3_POST_JAMAAH_NAG to firstPostJamaahEpoch)
-                                val urgentEpoch = effectiveEndEpoch - (15 * 60_000L)
+                                val urgentEpoch = effectiveEndEpoch - (urgentThresholdMin * 60_000L)
                                 if (urgentEpoch > effectiveJamaahEpoch) {
                                     add(AlarmTriggerType.STAGE_4_URGENT_END_OF_WINDOW to urgentEpoch)
                                 }
+                                add(AlarmTriggerType.STAGE_QAZA_ROLLOVER to effectiveEndEpoch)
                             }.sortedBy { it.second }
 
-                            return milestones.firstOrNull { it.second > referenceMs + 20_000L && it.second < effectiveEndEpoch }
+                            return milestones.firstOrNull { it.second > referenceMs + 20_000L && it.second <= effectiveEndEpoch }
                         }
 
                         when (triggerType) {
@@ -246,6 +340,11 @@ class PrayerAlarmReceiver : BroadcastReceiver() {
                                             scheduler.cancelAllAlarmsForPrayer(previousPrayerId)
                                         }
                                     }
+                                }
+
+                                if (triggerType == AlarmTriggerType.STAGE_1_PST_START && prayerId == "FAJR") {
+                                    // When Fajr starts on a new day in the background, ensure all 5 daily prayers + next day's Fajr are armed
+                                    scheduler.syncAndArmAllDailyAlarms(postActiveWindowNotificationIfNeeded = false)
                                 }
 
                                 val nextMilestone = findNextMilestoneAfter(nowMs)
@@ -367,6 +466,24 @@ class PrayerAlarmReceiver : BroadcastReceiver() {
                                         windowEndEpochMillis = effectiveEndEpoch,
                                         minutesUntilJamaah = 0,
                                         nagIteration = currentIter + 1
+                                    )
+                                } else {
+                                    // Schedule exact Qaza rollover at the end of the prayer window
+                                    scheduler.scheduleExactTrigger(
+                                        prayerId = prayerId,
+                                        prayerName = prayerName,
+                                        dateIso = todayIso,
+                                        triggerType = AlarmTriggerType.STAGE_QAZA_ROLLOVER,
+                                        triggerAtEpochMillis = effectiveEndEpoch,
+                                        pstTimeFormatted = pstTime,
+                                        adhanTimeFormatted = adhanTime,
+                                        jamaahTimeFormatted = jamaahTime,
+                                        pstEpochMillis = pstEpochMs,
+                                        adhanEpochMillis = effectiveAdhanEpoch,
+                                        jamaahEpochMillis = effectiveJamaahEpoch,
+                                        windowEndEpochMillis = effectiveEndEpoch,
+                                        minutesUntilJamaah = 0,
+                                        nagIteration = 0
                                     )
                                 }
 

@@ -73,6 +73,25 @@ class PrayerNaggingForegroundService : Service() {
             PrayerNotificationHelper.postNotificationIfPermitted(this, notification)
         }
 
+        val targetPct = if (triggerType == AlarmTriggerType.STAGE_4_URGENT_END_OF_WINDOW) 92 else 75
+        PrayerNotificationHelper.startLiveSecondTicker(
+            context = this,
+            prayerId = prayerId,
+            prayerName = prayerName,
+            dateIso = dateIso,
+            pstTimeFormatted = pstTime,
+            adhanTimeFormatted = adhanTime,
+            jamaahTimeFormatted = jamaahTime,
+            triggerType = triggerType,
+            minutesUntilJamaah = minutesUntilJamaah,
+            minutesPassedSinceJamaah = minutesPassed,
+            minutesRemainingUntilEnd = minutesRemaining,
+            repeatIntervalMinutes = repeatIntervalMin,
+            targetElapsedPct = targetPct,
+            nagIteration = nagIteration,
+            runInitialFastSweep = false
+        )
+
         return START_REDELIVER_INTENT
     }
 

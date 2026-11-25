@@ -42,12 +42,16 @@ class PrayerRepository(private val prayerDao: PrayerDao) {
         // 2. Seed UserPreferencesEntity with timezone-detected default city, X=15m, Y=20m buffers, and firstLaunchEpochMs
         val nowEpochMs = System.currentTimeMillis()
         val currentPrefs = prayerDao.getUserPreferencesSync()
-        val isRecognizedSelection = currentPrefs != null && (
+        val existingSavedCities = prayerDao.getLocalCitiesSync().map { it.cityId }.toSet()
+        val isRecognizedSelection = currentPrefs != null && currentPrefs.selectedCityId.isNotBlank() && (
             currentPrefs.useGpsLocation ||
             currentPrefs.selectedCityId in validPredefinedIds ||
+            currentPrefs.selectedCityId in existingSavedCities ||
             currentPrefs.selectedCityId.startsWith("gps_") ||
             currentPrefs.selectedCityId.startsWith("nom_") ||
-            currentPrefs.selectedCityId.startsWith("custom_")
+            currentPrefs.selectedCityId.startsWith("custom_") ||
+            currentPrefs.selectedCityId.startsWith("geo_") ||
+            currentPrefs.selectedCityId.startsWith("osm_")
         )
         if (currentPrefs == null || !isRecognizedSelection) {
             val defaultCity = PrayerTimeCalculator.detectBestDefaultCityForDeviceTimeZone()
@@ -175,17 +179,17 @@ class PrayerRepository(private val prayerDao: PrayerDao) {
                 AthkaarLogEntity(
                     dateIso = activeSheetIso,
                     athkaarId = "MORNING",
-                    currentCount = 33,
+                    currentCount = 0,
                     targetCount = 33,
-                    isCompleted = true,
-                    completedTimeFormatted = "06:15 AM"
+                    isCompleted = false,
+                    completedTimeFormatted = null
                 )
             )
             seedAthkaarLogs.add(
                 AthkaarLogEntity(
                     dateIso = activeSheetIso,
                     athkaarId = "EVENING",
-                    currentCount = 18,
+                    currentCount = 0,
                     targetCount = 33,
                     isCompleted = false,
                     completedTimeFormatted = null
@@ -198,7 +202,7 @@ class PrayerRepository(private val prayerDao: PrayerDao) {
                     currentCount = 0,
                     targetCount = 33,
                     isCompleted = false,
-                    completedTimeFormatted = "10:45 PM (Yesterday)"
+                    completedTimeFormatted = null
                 )
             )
 
@@ -312,7 +316,12 @@ class PrayerRepository(private val prayerDao: PrayerDao) {
         )
     }
 
-    suspend fun togglePrayerCompletion(dateIso: String, prayerId: String, currentlyPrayed: Boolean) {
+    suspend fun togglePrayerCompletion(
+        dateIso: String,
+        prayerId: String,
+        currentlyPrayed: Boolean,
+        isInJamaah: Boolean = true
+    ) {
         val existing = prayerDao.getPrayerRecordSync(dateIso, prayerId)
         val nextPrayed = !currentlyPrayed
         val wasQada = existing?.completionStatus == PrayerCompletionStatus.MISSED_QADA.name
@@ -321,7 +330,7 @@ class PrayerRepository(private val prayerDao: PrayerDao) {
                 dateIso = dateIso,
                 prayerId = prayerId,
                 isPrayed = nextPrayed,
-                isInJamaah = !wasQada,
+                isInJamaah = if (wasQada) false else isInJamaah,
                 completedAtMillis = if (nextPrayed) System.currentTimeMillis() else 0L,
                 completionStatus = when {
                     nextPrayed && wasQada -> PrayerCompletionStatus.PRAYED_LATE.name
@@ -333,7 +342,11 @@ class PrayerRepository(private val prayerDao: PrayerDao) {
         )
     }
 
-    suspend fun markPrayerCompleted(dateIso: String, prayerId: String) {
+    suspend fun markPrayerCompleted(
+        dateIso: String,
+        prayerId: String,
+        isInJamaah: Boolean = true
+    ) {
         val existing = prayerDao.getPrayerRecordSync(dateIso, prayerId)
         val wasQada = existing?.completionStatus == PrayerCompletionStatus.MISSED_QADA.name
         prayerDao.upsertPrayerRecord(
@@ -341,7 +354,7 @@ class PrayerRepository(private val prayerDao: PrayerDao) {
                 dateIso = dateIso,
                 prayerId = prayerId,
                 isPrayed = true,
-                isInJamaah = !wasQada,
+                isInJamaah = if (wasQada) false else isInJamaah,
                 completedAtMillis = System.currentTimeMillis(),
                 completionStatus = if (wasQada) {
                     PrayerCompletionStatus.PRAYED_LATE.name
@@ -349,6 +362,20 @@ class PrayerRepository(private val prayerDao: PrayerDao) {
                     PrayerCompletionStatus.PRAYED_ON_TIME.name
                 },
                 nagCountTriggered = existing?.nagCountTriggered ?: 0
+            )
+        )
+    }
+
+    suspend fun updatePrayerJamaahStatus(
+        dateIso: String,
+        prayerId: String,
+        isInJamaah: Boolean
+    ) {
+        val existing = prayerDao.getPrayerRecordSync(dateIso, prayerId) ?: return
+        prayerDao.upsertPrayerRecord(
+            existing.copy(
+                isPrayed = true,
+                isInJamaah = isInJamaah
             )
         )
     }
@@ -364,6 +391,27 @@ class PrayerRepository(private val prayerDao: PrayerDao) {
                 completedAtMillis = 0L,
                 completionStatus = PrayerCompletionStatus.MISSED_QADA.name,
                 nagCountTriggered = (existing?.nagCountTriggered ?: 0) + 1
+            )
+        )
+    }
+
+    suspend fun updateHistoricalPrayerStatus(
+        dateIso: String,
+        prayerId: String,
+        isPrayed: Boolean,
+        isInJamaah: Boolean,
+        completionStatus: PrayerCompletionStatus
+    ) {
+        val existing = prayerDao.getPrayerRecordSync(dateIso, prayerId)
+        prayerDao.upsertPrayerRecord(
+            PrayerRecordEntity(
+                dateIso = dateIso,
+                prayerId = prayerId,
+                isPrayed = isPrayed,
+                isInJamaah = if (isPrayed) isInJamaah else false,
+                completedAtMillis = if (isPrayed) System.currentTimeMillis() else 0L,
+                completionStatus = completionStatus.name,
+                nagCountTriggered = existing?.nagCountTriggered ?: 0
             )
         )
     }
@@ -447,6 +495,20 @@ class PrayerRepository(private val prayerDao: PrayerDao) {
                 completedTimeFormatted = if (completed) timeFormatted else null
             )
         )
+    }
+
+    suspend fun ensureDailyAthkaarInitialized(dateIso: String) {
+        val freshLogs = listOf("MORNING", "EVENING", "BEDTIME").map { athkaarId ->
+            AthkaarLogEntity(
+                dateIso = dateIso,
+                athkaarId = athkaarId,
+                currentCount = 0,
+                targetCount = 33,
+                isCompleted = false,
+                completedTimeFormatted = null
+            )
+        }
+        prayerDao.insertAthkaarLogsIfEmpty(freshLogs)
     }
 
     suspend fun toggleAthkaarComplete(

@@ -1,6 +1,0 @@
-{
-  "summary":  "Updated implementation plan covering all confirmed optimizations for the Screen 1 Lock & Alert card (Pre-PST button lock, full Starts/Adhan/Ends summary line, tappable Jama'ah pill), Screen 2 Hero Card (Coral Red urgent state in the final 15 minutes), and System Notifications (live ticking Chronometer timer, automatic Qaza rollover notification, and 3 separate sound channels for Soft PST, Active Reminders, and Urgent 15m Warnings).",
-  "updatedAt":  "2026-10-31T13:52:43.484880479Z",
-  "requestFeedback":  true,
-  "userFacing":  true
-}

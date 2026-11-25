@@ -286,16 +286,30 @@ object PrayerTimeCalculator {
         val maghribH = normalizeHours(dhuhrHours + sunriseDiff + (2.0 / 60.0))
         val ishaH = normalizeHours(dhuhrHours + ishaDiff)
 
-        val fajrMin = (fajrH * 60.0).toInt().coerceIn(180, 420)
-        val sunriseMin = (sunriseH * 60.0).toInt().coerceIn(300, 480)
-        val dhuhrMin = (dhuhrH * 60.0).toInt().coerceIn(660, 830)
-        val asrMin = (asrH * 60.0).toInt().coerceIn(860, 1060)
-        val maghribMin = (maghribH * 60.0).toInt().coerceIn(990, 1200)
-        val ishaMin = (ishaH * 60.0).toInt().coerceIn(1080, 1320)
+        val fajrMin = (fajrH * 60.0).toInt().coerceIn(120, 480)
+        val sunriseMin = (sunriseH * 60.0).toInt().coerceIn(210, 600).coerceAtLeast(fajrMin + 20)
+        val dhuhrMin = (dhuhrH * 60.0).toInt().coerceIn(630, 870).coerceAtLeast(sunriseMin + 30)
+        val asrMin = (asrH * 60.0).toInt().coerceIn(780, 1140).coerceAtLeast(dhuhrMin + 30)
+        val maghribMin = (maghribH * 60.0).toInt().coerceIn(870, 1350).coerceAtLeast(asrMin + 20)
+        val ishaMin = (ishaH * 60.0).toInt().coerceIn(960, 1425).coerceAtLeast(maghribMin + 30)
 
-        // Islamic Midnight (Muntasaf al-Layl) = exact midpoint between Maghrib (Sunset) and Fajr
-        val nightDurationMin = ((fajrMin + 1440) - maghribMin).coerceAtLeast(120)
-        val islamicMidnightContinuousMin = maghribMin + (nightDurationMin / 2)
+        // Islamic Midnight (Muntasaf al-Layl) = exact astronomical midpoint between this day's Maghrib (Sunset)
+        // and the next morning's Fajr (never hardcoded to 12:00 AM)
+        val nextDayCal = (calendar.clone() as Calendar).apply {
+            add(Calendar.DAY_OF_YEAR, 1)
+        }
+        val nextYear = nextDayCal.get(Calendar.YEAR)
+        val nextMonth = nextDayCal.get(Calendar.MONTH) + 1
+        val nextDay = nextDayCal.get(Calendar.DAY_OF_MONTH)
+        val nextJd = julianDate(nextYear, nextMonth, nextDay) - city.longitude / (15.0 * 24.0)
+        val (nextDeclination, nextEqTime) = sunPosition(nextJd + 0.5)
+        val nextDhuhrHours = 12.0 + city.timeZoneOffsetHours - (city.longitude / 15.0) - nextEqTime
+        val nextFajrDiff = hourAngle(city.latitude, nextDeclination, fajrAngle)
+        val nextFajrH = normalizeHours(nextDhuhrHours - nextFajrDiff)
+        val nextDayFajrMin = (nextFajrH * 60.0).toInt().coerceIn(120, 480)
+
+        val nightDurationMin = ((nextDayFajrMin + 1440) - maghribMin).coerceAtLeast(120)
+        val islamicMidnightContinuousMin = (maghribMin + (nightDurationMin / 2)).coerceAtLeast(ishaMin + 15)
 
         return CalculatedPrayerTimes(
             fajrMinutes = fajrMin,
@@ -389,10 +403,18 @@ object PrayerTimeCalculator {
         return String.format(Locale.US, "%02d:%02d", h24, m)
     }
 
-    fun getApproximateHijriDateString(calendar: Calendar = Calendar.getInstance()): String {
-        val day = calendar.get(Calendar.DAY_OF_MONTH).toDouble()
-        val month = (calendar.get(Calendar.MONTH) + 1).toDouble()
-        val year = calendar.get(Calendar.YEAR).toDouble()
+    fun getApproximateHijriDateString(
+        calendar: Calendar = Calendar.getInstance(),
+        dayOffset: Int = 0
+    ): String {
+        val adjustedCal = (calendar.clone() as Calendar).apply {
+            if (dayOffset != 0) {
+                add(Calendar.DAY_OF_YEAR, dayOffset.coerceIn(-2, 2))
+            }
+        }
+        val day = adjustedCal.get(Calendar.DAY_OF_MONTH).toDouble()
+        val month = (adjustedCal.get(Calendar.MONTH) + 1).toDouble()
+        val year = adjustedCal.get(Calendar.YEAR).toDouble()
 
         var m = month
         var y = year

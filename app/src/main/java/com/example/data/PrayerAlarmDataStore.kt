@@ -4,12 +4,15 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.example.domain.CityLocation
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 private val Context.prayerAlarmDataStore: DataStore<Preferences> by preferencesDataStore(
@@ -24,7 +27,20 @@ data class AlarmLoopRuntimeState(
     val nextScheduledAlarmEpochMs: Long = 0L,
     val snoozedExtraMinutes: Int = 0,
     val isForegroundLoopActive: Boolean = false,
-    val lastEventDescription: String = "Exact alarms armed (Trigger 1 @ Adhan, Trigger 2 @ -15m Jama'ah, Nag @ +20m)"
+    val lastEventDescription: String = "Exact alarms armed (Trigger 1 @ Adhan, Trigger 2 @ -15m Jama'ah, Nag @ +20m)",
+    val hijriDayOffset: Int = 0,
+    val autoJamaahWindowMinutes: Int = 20, // 0 = Always Ask / Manual Choice, 15 = Auto within 15m of Jama'ah, 20 = Auto within 20m of Jama'ah
+    val manualQazaBacklogCount: Int = 0,
+    val autoSilenceDuringJamaah: Boolean = true,
+    val savedCityId: String? = null,
+    val savedCityName: String? = null,
+    val savedCityCountry: String? = null,
+    val savedCityLatitude: Double? = null,
+    val savedCityLongitude: Double? = null,
+    val savedCityTzOffset: Double? = null,
+    val savedCityIsGps: Boolean = false,
+    val lastAthkaarDateIso: String? = null,
+    val themeMode: String = "SYSTEM_AUTO"
 )
 
 class PrayerAlarmDataStore(private val context: Context) {
@@ -38,6 +54,19 @@ class PrayerAlarmDataStore(private val context: Context) {
         val SNOOZED_EXTRA_MINUTES = intPreferencesKey("snoozed_extra_minutes")
         val IS_FOREGROUND_LOOP_ACTIVE = booleanPreferencesKey("is_foreground_loop_active")
         val LAST_EVENT_DESCRIPTION = stringPreferencesKey("last_event_description")
+        val HIJRI_DAY_OFFSET = intPreferencesKey("hijri_day_offset")
+        val AUTO_JAMAAH_WINDOW_MINUTES = intPreferencesKey("auto_jamaah_window_minutes")
+        val MANUAL_QAZA_BACKLOG_COUNT = intPreferencesKey("manual_qaza_backlog_count")
+        val AUTO_SILENCE_DURING_JAMAAH = booleanPreferencesKey("auto_silence_during_jamaah")
+        val SAVED_CITY_ID = stringPreferencesKey("saved_city_id")
+        val SAVED_CITY_NAME = stringPreferencesKey("saved_city_name")
+        val SAVED_CITY_COUNTRY = stringPreferencesKey("saved_city_country")
+        val SAVED_CITY_LATITUDE = doublePreferencesKey("saved_city_latitude")
+        val SAVED_CITY_LONGITUDE = doublePreferencesKey("saved_city_longitude")
+        val SAVED_CITY_TZ_OFFSET = doublePreferencesKey("saved_city_tz_offset")
+        val SAVED_CITY_IS_GPS = booleanPreferencesKey("saved_city_is_gps")
+        val LAST_ATHKAAR_DATE_ISO = stringPreferencesKey("last_athkaar_date_iso")
+        val THEME_MODE = stringPreferencesKey("app_theme_mode")
     }
 
     val runtimeStateFlow: Flow<AlarmLoopRuntimeState> = context.prayerAlarmDataStore.data.map { prefs ->
@@ -50,8 +79,91 @@ class PrayerAlarmDataStore(private val context: Context) {
             snoozedExtraMinutes = prefs[Keys.SNOOZED_EXTRA_MINUTES] ?: 0,
             isForegroundLoopActive = prefs[Keys.IS_FOREGROUND_LOOP_ACTIVE] ?: false,
             lastEventDescription = prefs[Keys.LAST_EVENT_DESCRIPTION]
-                ?: "Exact alarms armed (Trigger 1 @ Adhan, Trigger 2 @ -15m Jama'ah, Nag @ +20m)"
+                ?: "Exact alarms armed (Trigger 1 @ Adhan, Trigger 2 @ -15m Jama'ah, Nag @ +20m)",
+            hijriDayOffset = (prefs[Keys.HIJRI_DAY_OFFSET] ?: 0).coerceIn(-2, 2),
+            autoJamaahWindowMinutes = prefs[Keys.AUTO_JAMAAH_WINDOW_MINUTES] ?: 20,
+            manualQazaBacklogCount = (prefs[Keys.MANUAL_QAZA_BACKLOG_COUNT] ?: 0).coerceAtLeast(-500),
+            autoSilenceDuringJamaah = prefs[Keys.AUTO_SILENCE_DURING_JAMAAH] ?: true,
+            savedCityId = prefs[Keys.SAVED_CITY_ID]?.takeIf { it.isNotBlank() },
+            savedCityName = prefs[Keys.SAVED_CITY_NAME]?.takeIf { it.isNotBlank() },
+            savedCityCountry = prefs[Keys.SAVED_CITY_COUNTRY]?.takeIf { it.isNotBlank() },
+            savedCityLatitude = prefs[Keys.SAVED_CITY_LATITUDE],
+            savedCityLongitude = prefs[Keys.SAVED_CITY_LONGITUDE],
+            savedCityTzOffset = prefs[Keys.SAVED_CITY_TZ_OFFSET],
+            savedCityIsGps = prefs[Keys.SAVED_CITY_IS_GPS] ?: false,
+            lastAthkaarDateIso = prefs[Keys.LAST_ATHKAAR_DATE_ISO]?.takeIf { it.isNotBlank() },
+            themeMode = prefs[Keys.THEME_MODE]?.takeIf { it.isNotBlank() } ?: "SYSTEM_AUTO"
         )
+    }
+
+    suspend fun saveSelectedCitySnapshot(city: CityLocation, isGps: Boolean) {
+        context.prayerAlarmDataStore.edit { prefs ->
+            prefs[Keys.SAVED_CITY_ID] = city.id
+            prefs[Keys.SAVED_CITY_NAME] = city.name
+            prefs[Keys.SAVED_CITY_COUNTRY] = city.country
+            prefs[Keys.SAVED_CITY_LATITUDE] = city.latitude
+            prefs[Keys.SAVED_CITY_LONGITUDE] = city.longitude
+            prefs[Keys.SAVED_CITY_TZ_OFFSET] = city.timeZoneOffsetHours
+            prefs[Keys.SAVED_CITY_IS_GPS] = isGps
+        }
+    }
+
+    suspend fun getSavedCitySnapshot(): Pair<CityLocation, Boolean>? {
+        val state = runtimeStateFlow.first()
+        val id = state.savedCityId ?: return null
+        val name = state.savedCityName ?: return null
+        val lat = state.savedCityLatitude ?: return null
+        val lon = state.savedCityLongitude ?: return null
+        val tz = state.savedCityTzOffset ?: return null
+        return Pair(
+            CityLocation(
+                id = id,
+                name = name,
+                country = state.savedCityCountry ?: "Saved Location",
+                latitude = lat,
+                longitude = lon,
+                timeZoneOffsetHours = tz,
+                isGpsSimulated = state.savedCityIsGps
+            ),
+            state.savedCityIsGps
+        )
+    }
+
+    suspend fun setLastAthkaarDateIso(dateIso: String) {
+        context.prayerAlarmDataStore.edit { prefs ->
+            prefs[Keys.LAST_ATHKAAR_DATE_ISO] = dateIso
+        }
+    }
+
+    suspend fun setHijriDayOffset(offset: Int) {
+        context.prayerAlarmDataStore.edit { prefs ->
+            prefs[Keys.HIJRI_DAY_OFFSET] = offset.coerceIn(-2, 2)
+        }
+    }
+
+    suspend fun setAutoJamaahWindowMinutes(windowMinutes: Int) {
+        context.prayerAlarmDataStore.edit { prefs ->
+            prefs[Keys.AUTO_JAMAAH_WINDOW_MINUTES] = windowMinutes.coerceIn(0, 60)
+        }
+    }
+
+    suspend fun adjustManualQazaBacklog(delta: Int, minFloor: Int = 0) {
+        context.prayerAlarmDataStore.edit { prefs ->
+            val current = prefs[Keys.MANUAL_QAZA_BACKLOG_COUNT] ?: 0
+            prefs[Keys.MANUAL_QAZA_BACKLOG_COUNT] = (current + delta).coerceAtLeast(minFloor)
+        }
+    }
+
+    suspend fun setAutoSilenceDuringJamaah(enabled: Boolean) {
+        context.prayerAlarmDataStore.edit { prefs ->
+            prefs[Keys.AUTO_SILENCE_DURING_JAMAAH] = enabled
+        }
+    }
+
+    suspend fun setThemeMode(modeName: String) {
+        context.prayerAlarmDataStore.edit { prefs ->
+            prefs[Keys.THEME_MODE] = modeName
+        }
     }
 
     suspend fun recordTriggerActivated(

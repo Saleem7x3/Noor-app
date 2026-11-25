@@ -118,6 +118,7 @@ data class PrayerItemUiModel(
     val useFixedTime: Boolean = false,
     val fixedTimeMinutes: Int = 795,
     val isPrayed: Boolean = false,
+    val isInJamaah: Boolean = true,
     val canMarkPrayed: Boolean = false,
     val isCurrent: Boolean = false,
     val isNext: Boolean = false,
@@ -126,11 +127,12 @@ data class PrayerItemUiModel(
     val settingsKey: String = id,
     val isJumuah: Boolean = false,
     val endMinutes: Int = 0,
-    val displayEndMinutes: Int = endMinutes
+    val displayEndMinutes: Int = endMinutes,
+    val targetDateIso: String = ""
 ) {
     val adhanMinutes: Int
         get() = if (useFixedAdhanTime) {
-            fixedAdhanTimeMinutes
+            fixedAdhanTimeMinutes.coerceIn(0, 1439).coerceAtLeast(pstMinutes)
         } else {
             (pstMinutes + adhanOffsetMinutes).coerceAtLeast(pstMinutes)
         }
@@ -166,6 +168,17 @@ data class AthkaarHabitUiModel(
     val isBedtimeTracker: Boolean = false
 )
 
+data class HistoricalDayPrayerUiModel(
+    val prayerId: String,
+    val nameEnglish: String,
+    val nameArabic: String,
+    val isPrayed: Boolean,
+    val isInJamaah: Boolean,
+    val completionStatus: PrayerCompletionStatus,
+    val canMarkPrayed: Boolean = true,
+    val pstFormatted: String = ""
+)
+
 data class DayContributionCell(
     val dateIso: String,
     val dayOfWeekShort: String,
@@ -173,8 +186,10 @@ data class DayContributionCell(
     val prayersCompleted: Int, // 0..5
     val athkaarCompleted: Int, // 0..3
     val qadaCount: Int = 0,
-    val isToday: Boolean = false
+    val isToday: Boolean = false,
+    val prayerStatuses: List<HistoricalDayPrayerUiModel> = emptyList()
 ) {
     val totalScore: Float
         get() = ((prayersCompleted + athkaarCompleted) / 8f).coerceIn(0f, 1f)
 }
+

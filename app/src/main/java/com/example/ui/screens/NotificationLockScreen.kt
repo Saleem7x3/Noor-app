@@ -4,10 +4,20 @@ import android.Manifest
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,20 +28,21 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.NotificationsActive
-import androidx.compose.material.icons.filled.Snooze
-import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Mosque
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -41,51 +52,43 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.R
 import com.example.data.PrayerItemUiModel
 import com.example.domain.PrayerTimeCalculator
 import com.example.notification.AlarmTriggerType
 import com.example.notification.PrayerNotificationHelper
-import com.example.ui.theme.CoralAlert
-import com.example.ui.theme.CrispOffWhite
-import com.example.ui.theme.DeepSlateBlue
-import com.example.ui.theme.DeepSlateDarker
-import com.example.ui.theme.ElegantGold
-import com.example.ui.theme.ElevatedSlateCard
-import com.example.ui.theme.ElevatedSlateSurface
-import com.example.ui.theme.EmeraldCompleted
-import com.example.ui.theme.GoldContainerDark
-import com.example.ui.theme.MutedPeriwinkle
-import com.example.ui.theme.OnGoldDark
-import com.example.ui.theme.RadiantAmberGlow
-import com.example.ui.theme.SlateStrokeBorder
+import com.example.ui.components.AppleHairlineDivider
+import com.example.ui.components.SwissInsetGroup
+import com.example.ui.components.appleSpringClickable
+import com.example.ui.theme.AmiriFontFamily
+import com.example.ui.theme.IbmPlexMonoFontFamily
+import com.example.ui.theme.NoorTheme
+import com.example.ui.theme.asMonoPrecision
+import com.example.ui.theme.withTabularDigits
 import com.example.viewmodel.PrayerDashboardUiState
+import java.util.Locale
+import kotlin.math.abs
+import kotlinx.coroutines.delay
 
-/**
- * Screen 1: Dynamic Notification & Lock Screen
- * Streamlined, uncluttered lock screen and live notification preview:
- * - Clean Android Lock Screen clock & Hijri date header
- * - Focused Android notification card synced with the 4-phase prayer status
- * - "Mark as Prayed" is locked until Jama'ah time is reached
- * - "Snooze 5m" is hidden entirely before the Pre-Jama'ah reminder threshold (uiState.isSnoozeEnabled)
- */
 @Composable
 fun NotificationLockScreenContent(
     uiState: PrayerDashboardUiState,
@@ -97,10 +100,14 @@ fun NotificationLockScreenContent(
     onDismissJamaahDialog: () -> Unit = {},
     onToggleCountdownMode: () -> Unit = {},
     onUpdateRepeatInterval: (Int, Int, Int, Int) -> Unit = { _, _, _, _ -> },
+    onMarkAsPrayedWithMode: (Boolean?) -> Unit = { _ -> onMarkAsPrayed() },
+    onUpdateHijriOffset: (Int) -> Unit = {},
     modifier: Modifier = Modifier,
     isCompactShowcase: Boolean = false
 ) {
     val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
+    val colors = NoorTheme.colors
     val featuredPrayer = uiState.featuredPrayer
     val prayerName = featuredPrayer?.nameEnglish ?: "Asr"
     val prayerArabic = featuredPrayer?.nameArabic ?: "العصر"
@@ -108,8 +115,15 @@ fun NotificationLockScreenContent(
     val adhanTime = featuredPrayer?.let { PrayerTimeCalculator.formatMinutesTo12Hour(it.adhanMinutes) } ?: "04:30 PM"
     val jamaahTime = featuredPrayer?.let { PrayerTimeCalculator.formatMinutesTo12Hour(it.jamaahMinutes) } ?: "04:45 PM"
     val canMarkPrayedNow = (uiState.isFeaturedPrayerActiveWindow && featuredPrayer?.canMarkPrayed == true) ||
-        uiState.isAllTodayPrayersCompleted ||
         uiState.isIshaMissedAfterMidnight
+
+    val isWithinAutoJamaahWindow = featuredPrayer != null &&
+        uiState.autoJamaahWindowMinutes > 0 &&
+        abs(uiState.currentClockMinutesNow - featuredPrayer.jamaahMinutes) <= uiState.autoJamaahWindowMinutes
+
+    var showHijriStepper by remember { mutableStateOf(false) }
+    var showExactCheckpointTimes by remember { mutableStateOf(false) }
+    var isAlertPillExpanded by remember { mutableStateOf(false) }
 
     val activeStage = when {
         uiState.isUrgentEndOfWindow || (uiState.isFeaturedPrayerActiveWindow && uiState.isJamaahTimePassed &&
@@ -126,24 +140,47 @@ fun NotificationLockScreenContent(
     }
 
     var sweepTriggerCount by remember { mutableStateOf(0) }
-    var isFastSweeping by remember { mutableStateOf(true) }
-    var sweepTarget by remember { mutableFloatStateOf(0.15f) }
+    var isFastSweeping by remember { mutableStateOf(false) }
+    var sweepTarget by remember { mutableFloatStateOf(0f) }
 
-    LaunchedEffect(featuredPrayer?.id, activeStage, sweepTriggerCount) {
-        isFastSweeping = true
-        sweepTarget = 0.18f
-        delay(120L)
-        sweepTarget = 1.0f
-        delay(1800L)
-        isFastSweeping = false
+    LaunchedEffect(featuredPrayer?.id, activeStage, sweepTriggerCount, uiState.isFeaturedPrayerActiveWindow) {
+        if (uiState.isFeaturedPrayerActiveWindow) {
+            isFastSweeping = true
+            sweepTarget = 0.18f
+            delay(120L)
+            sweepTarget = 1.0f
+            delay(1500L)
+            isFastSweeping = false
+        } else {
+            isFastSweeping = false
+            sweepTarget = 0f
+        }
     }
 
-    val targetFraction = if (isFastSweeping) sweepTarget else uiState.notificationProgressFraction
+    val targetFraction = when {
+        !uiState.isFeaturedPrayerActiveWindow -> 0f
+        isFastSweeping -> sweepTarget
+        else -> uiState.notificationProgressFraction
+    }
     val animatedProgress by animateFloatAsState(
         targetValue = targetFraction,
-        animationSpec = tween(durationMillis = if (isFastSweeping) 1650 else 550),
+        animationSpec = tween(durationMillis = if (isFastSweeping) 1400 else 450),
         label = "notification_progress_bar"
     )
+
+    val shouldBlinkStages = uiState.lockScreenBlinkItems.size > 1
+    var blinkIndex by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(featuredPrayer?.id, shouldBlinkStages) {
+        if (!shouldBlinkStages) {
+            blinkIndex = 0
+            return@LaunchedEffect
+        }
+        while (true) {
+            delay(2800L)
+            blinkIndex = (blinkIndex + 1) % uiState.lockScreenBlinkItems.size.coerceAtLeast(1)
+        }
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -171,6 +208,54 @@ fun NotificationLockScreenContent(
         }
     }
 
+    val triggerNotificationAction = {
+        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        sweepTriggerCount += 1
+        if (!uiState.isFeaturedPrayerActiveWindow) {
+            onNotificationTriggered(
+                "$prayerName has not started yet (Starts at $pstTime · ${uiState.heroCountdownSubtitleText})"
+            )
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val sent = PrayerNotificationHelper.showDynamicPrayerNotification(
+                context = context,
+                prayerName = prayerName,
+                pstTimeFormatted = pstTime,
+                adhanTimeFormatted = adhanTime,
+                jamaahTimeFormatted = jamaahTime,
+                minutesUntilJamaah = uiState.minutesUntilJamaah,
+                minutesPassedSinceJamaah = uiState.minutesElapsedSinceJamaah,
+                minutesRemainingUntilEnd = uiState.minutesUntilNextPrayer,
+                repeatIntervalMinutes = uiState.nagIntervalMinutes,
+                preJamaahAlertMinutes = uiState.preJamaahAlertMinutes,
+                progressPercent = (uiState.notificationProgressFraction * 100).toInt(),
+                triggerType = activeStage
+            )
+            if (!sent) {
+                permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                onNotificationTriggered("System notification posted for $prayerName")
+            }
+        } else {
+            PrayerNotificationHelper.showDynamicPrayerNotification(
+                context = context,
+                prayerName = prayerName,
+                pstTimeFormatted = pstTime,
+                adhanTimeFormatted = adhanTime,
+                jamaahTimeFormatted = jamaahTime,
+                minutesUntilJamaah = uiState.minutesUntilJamaah,
+                minutesPassedSinceJamaah = uiState.minutesElapsedSinceJamaah,
+                minutesRemainingUntilEnd = uiState.minutesUntilNextPrayer,
+                repeatIntervalMinutes = uiState.nagIntervalMinutes,
+                preJamaahAlertMinutes = uiState.preJamaahAlertMinutes,
+                progressPercent = (uiState.notificationProgressFraction * 100).toInt(),
+                triggerType = activeStage
+            )
+            onNotificationTriggered("System notification posted for $prayerName")
+        }
+    }
+
+    val isUrgentVisual = uiState.isIshaMissedAfterMidnight || activeStage == AlarmTriggerType.STAGE_4_URGENT_END_OF_WINDOW
+
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
@@ -181,91 +266,200 @@ fun NotificationLockScreenContent(
         Column(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(if (isTightDisplay) 14.dp else 18.dp)
+            verticalArrangement = Arrangement.spacedBy(if (isTightDisplay) 18.dp else 24.dp)
         ) {
-            // Lock Screen Status & Time Display
+            // 1. Open Swiss Typographic Lock Clock directly on canvas (no pills, no boxed seconds)
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.padding(top = if (isTightDisplay) 6.dp else 12.dp)
+                modifier = Modifier.padding(top = if (isTightDisplay) 8.dp else 18.dp)
             ) {
-                Surface(
-                    color = ElevatedSlateSurface,
-                    shape = CircleShape,
-                    border = BorderStroke(1.dp, SlateStrokeBorder)
+                // Borderless tappable Hijri date header
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            showHijriStepper = !showHijriStepper
+                        }
+                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                        .testTag("hijri_date_pill"),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    Icon(
+                        imageVector = Icons.Rounded.Lock,
+                        contentDescription = "Lock screen & Hijri date adjustment",
+                        tint = if (uiState.hijriDayOffset != 0) colors.accentGold else colors.inkTertiary,
+                        modifier = Modifier.size(12.dp)
+                    )
+                    val offsetBadge = when {
+                        uiState.hijriDayOffset > 0 -> " (+${uiState.hijriDayOffset}d)"
+                        uiState.hijriDayOffset < 0 -> " (${uiState.hijriDayOffset}d)"
+                        else -> ""
+                    }
+                    Text(
+                        text = (uiState.hijriDateText.ifEmpty { "26 Rabi' al-Thani 1448 AH" }) + offsetBadge,
+                        style = MaterialTheme.typography.labelSmall.asMonoPrecision(),
+                        color = if (uiState.hijriDayOffset != 0) colors.accentGold else colors.inkSecondary,
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                }
+
+                // Inline moonsighting adjustment strip
+                AnimatedVisibility(
+                    visible = showHijriStepper,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()
+                ) {
+                    SwissInsetGroup(
+                        cornerRadius = 12.dp,
+                        modifier = Modifier
+                            .padding(top = 8.dp)
+                            .testTag("hijri_offset_stepper_bar")
                     ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Lock,
-                            contentDescription = "Lock screen indicator",
-                            tint = ElegantGold,
-                            modifier = Modifier.size(14.dp)
+                        Column(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "HIJRI MOONSIGHTING OFFSET",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontFamily = IbmPlexMonoFontFamily,
+                                    letterSpacing = 0.9.sp,
+                                    fontSize = 9.5.sp
+                                ),
+                                color = colors.inkTertiary
+                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(colors.segmentedTrack)
+                                    .padding(3.dp),
+                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                            ) {
+                                listOf(-2, -1, 0, 1, 2).forEach { dayOff ->
+                                    val isSelected = uiState.hijriDayOffset == dayOff
+                                    val label = when {
+                                        dayOff == 0 -> "0d"
+                                        dayOff > 0 -> "+${dayOff}d"
+                                        else -> "${dayOff}d"
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(if (isSelected) colors.segmentedThumb else Color.Transparent)
+                                            .clickable { onUpdateHijriOffset(dayOff) }
+                                            .padding(vertical = 6.dp)
+                                            .testTag("hijri_offset_chip_$dayOff"),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = label,
+                                            style = MaterialTheme.typography.labelSmall.asMonoPrecision(),
+                                            color = if (isSelected) colors.accentGold else colors.inkSecondary,
+                                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Pure Open Horological Clock (no box around seconds)
+                val clockMain = uiState.currentTimeFormatted.substringBefore(" ")
+                val clockPeriod = uiState.currentTimeFormatted.substringAfter(" ", "PM")
+                val secondsFormatted = String.format(Locale.US, ":%02d", uiState.currentClockSeconds)
+
+                Row(
+                    verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = clockMain,
+                        style = MaterialTheme.typography.displayLarge.withTabularDigits(),
+                        fontSize = if (isTightDisplay) 48.sp else 60.sp,
+                        lineHeight = if (isTightDisplay) 52.sp else 64.sp,
+                        letterSpacing = (-2.2).sp,
+                        color = colors.inkPrimary,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Column(
+                        modifier = Modifier
+                            .padding(bottom = 8.dp)
+                            .testTag("clock_seconds_pill"),
+                        horizontalAlignment = Alignment.Start
+                    ) {
+                        Text(
+                            text = secondsFormatted,
+                            style = MaterialTheme.typography.labelMedium.asMonoPrecision(),
+                            fontSize = if (isTightDisplay) 12.sp else 13.sp,
+                            color = colors.accentGold,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            softWrap = false
                         )
                         Text(
-                            text = uiState.hijriDateText.ifEmpty { "26 Rabi' al-Thani 1448 AH" },
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MutedPeriwinkle,
+                            text = clockPeriod,
+                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = IbmPlexMonoFontFamily),
+                            fontSize = 10.sp,
+                            color = colors.inkTertiary,
                             maxLines = 1,
                             softWrap = false
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(4.dp))
+
+                val dayParts = uiState.dayAndDateBadgeText.split(" • ")
+                val englishDayPart = dayParts.firstOrNull().orEmpty()
+                val arabicDayPart = dayParts.getOrNull(1).orEmpty()
 
                 Text(
-                    text = uiState.currentTimeFormatted.substringBefore(" "),
-                    style = if (isTightDisplay) {
-                        MaterialTheme.typography.displayMedium
-                    } else {
-                        MaterialTheme.typography.displayLarge
+                    text = buildAnnotatedString {
+                        append(englishDayPart)
+                        if (arabicDayPart.isNotEmpty()) {
+                            append(" · ")
+                            withStyle(
+                                SpanStyle(
+                                    fontFamily = AmiriFontFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    color = colors.accentGold,
+                                    fontSize = 14.5.sp
+                                )
+                            ) {
+                                append(arabicDayPart)
+                            }
+                        }
+                        append(" · ${uiState.selectedCity.name}")
                     },
-                    color = CrispOffWhite,
-                    fontWeight = FontWeight.Bold
-                )
-
-                Text(
-                    text = "${uiState.dayAndDateBadgeText} • ${uiState.selectedCity.name}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MutedPeriwinkle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.inkSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
             }
 
-            // Focused Android Dynamic Notification Banner Card
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("dynamic_notification_banner"),
-                shape = RoundedCornerShape(22.dp),
-                colors = CardDefaults.cardColors(containerColor = ElevatedSlateSurface),
-                border = BorderStroke(
-                    1.2.dp,
-                    if (uiState.isIshaMissedAfterMidnight || activeStage == AlarmTriggerType.STAGE_4_URGENT_END_OF_WINDOW)
-                        CoralAlert.copy(alpha = 0.7f)
-                    else ElegantGold.copy(alpha = 0.45f)
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+            // 2. Single Calm Flat Notification Surface (zero icon-tile box, 2dp hairline timeline)
+            SwissInsetGroup(
+                borderColor = if (isUrgentVisual) colors.accentCoral.copy(alpha = 0.5f) else colors.hairline,
+                modifier = Modifier.testTag("dynamic_notification_banner")
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(
-                                    ElevatedSlateCard,
-                                    ElevatedSlateSurface
-                                )
-                            )
-                        )
-                        .padding(if (isTightDisplay) 14.dp else 18.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                        .padding(if (isTightDisplay) 16.dp else 20.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    // Notification Top Row: Status Header on Left + Compact Jama'ah Pill on Right
+                    // Header: Quiet Status Dot + Mono Eyebrow (Left) + Borderless Tappable Jama'ah (Right)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -273,327 +467,463 @@ fun NotificationLockScreenContent(
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(7.dp),
                             modifier = Modifier.weight(1f, fill = false)
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(26.dp)
+                                    .size(6.dp)
                                     .clip(CircleShape)
-                                    .background(
-                                        when {
-                                            uiState.isIshaMissedAfterMidnight || activeStage == AlarmTriggerType.STAGE_4_URGENT_END_OF_WINDOW ->
-                                                CoralAlert.copy(alpha = 0.2f)
-                                            uiState.isAllTodayPrayersCompleted -> EmeraldCompleted.copy(alpha = 0.2f)
-                                            else -> GoldContainerDark
-                                        }
-                                    ),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = if (uiState.isAllTodayPrayersCompleted) Icons.Filled.Check else Icons.Filled.NotificationsActive,
-                                    contentDescription = "Prayer notification icon",
-                                    tint = when {
-                                        uiState.isIshaMissedAfterMidnight || activeStage == AlarmTriggerType.STAGE_4_URGENT_END_OF_WINDOW -> CoralAlert
-                                        uiState.isAllTodayPrayersCompleted -> EmeraldCompleted
-                                        else -> ElegantGold
-                                    },
-                                    modifier = Modifier.size(15.dp)
-                                )
-                            }
+                                    .background(if (isUrgentVisual) colors.accentCoral else colors.accentGold)
+                            )
                             Text(
-                                text = uiState.heroHeaderStatusLabel,
-                                style = MaterialTheme.typography.labelSmall,
-                                fontSize = if (isTightDisplay) 10.sp else 11.sp,
-                                color = when {
-                                    uiState.isIshaMissedAfterMidnight || activeStage == AlarmTriggerType.STAGE_4_URGENT_END_OF_WINDOW -> CoralAlert
-                                    uiState.isAllTodayPrayersCompleted -> EmeraldCompleted
-                                    else -> ElegantGold
-                                },
-                                fontWeight = FontWeight.Bold,
+                                text = uiState.heroHeaderStatusLabel.uppercase(),
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontFamily = IbmPlexMonoFontFamily,
+                                    letterSpacing = 0.9.sp
+                                ),
+                                fontSize = 10.sp,
+                                color = if (isUrgentVisual) colors.accentCoral else colors.inkSecondary,
                                 maxLines = 1,
                                 softWrap = false,
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
 
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
 
-                        Surface(
-                            color = GoldContainerDark,
-                            shape = RoundedCornerShape(50),
-                            border = BorderStroke(
-                                1.dp,
-                                if (uiState.isJamaahTimePassed) RadiantAmberGlow else ElegantGold.copy(alpha = 0.7f)
-                            ),
+                        Text(
+                            text = "${uiState.heroJamaahPillText} ✎",
+                            style = MaterialTheme.typography.labelSmall.asMonoPrecision(),
+                            fontSize = 10.5.sp,
+                            color = colors.accentGold,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            softWrap = false,
                             modifier = Modifier
-                                .clip(RoundedCornerShape(50))
+                                .clip(RoundedCornerShape(6.dp))
                                 .clickable {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     featuredPrayer?.let { onEditJamaahClicked(it) }
                                 }
+                                .padding(horizontal = 6.dp, vertical = 3.dp)
                                 .testTag("minutes_until_jamaah_badge")
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(6.dp)
-                                        .clip(CircleShape)
-                                        .background(if (uiState.isJamaahTimePassed) RadiantAmberGlow else ElegantGold)
-                                )
-                                Text(
-                                    text = "${uiState.heroJamaahPillText} ✎",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontSize = if (isTightDisplay) 10.5.sp else 11.sp,
-                                    color = RadiantAmberGlow,
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 1,
-                                    softWrap = false
-                                )
-                            }
-                        }
+                        )
                     }
 
-                    // Middle Section: Prayer Name ("Jumu'ah الجمعة") on Left, Full-Width Schedule Summary Below
+                    // Prayer Title + Schedule Line
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            verticalAlignment = Alignment.Bottom,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             Text(
                                 text = prayerName,
-                                style = if (isTightDisplay) {
-                                    MaterialTheme.typography.titleLarge
-                                } else {
-                                    MaterialTheme.typography.headlineSmall
-                                },
-                                color = CrispOffWhite,
-                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.headlineMedium,
+                                fontSize = if (isTightDisplay) 24.sp else 28.sp,
+                                color = colors.inkPrimary,
+                                fontWeight = FontWeight.Medium,
                                 maxLines = 1,
                                 softWrap = false
                             )
                             Text(
                                 text = prayerArabic,
-                                style = if (isTightDisplay) {
-                                    MaterialTheme.typography.titleSmall
-                                } else {
-                                    MaterialTheme.typography.titleMedium
-                                },
-                                color = ElegantGold,
-                                fontWeight = FontWeight.SemiBold,
+                                fontFamily = AmiriFontFamily,
+                                fontSize = if (isTightDisplay) 20.sp else 23.sp,
+                                color = colors.accentGold,
+                                fontWeight = FontWeight.Bold,
                                 maxLines = 1,
-                                softWrap = false
+                                softWrap = false,
+                                modifier = Modifier.padding(bottom = 2.dp)
                             )
                         }
 
                         Text(
                             text = uiState.lockScreenStageTimeText,
-                            style = MaterialTheme.typography.bodySmall,
-                            fontSize = if (isTightDisplay) 11.5.sp else 12.5.sp,
-                            color = MutedPeriwinkle,
-                            fontWeight = FontWeight.Medium,
+                            style = MaterialTheme.typography.labelSmall.asMonoPrecision(),
+                            fontSize = 11.sp,
+                            color = colors.inkSecondary,
                             maxLines = 1,
                             softWrap = false,
                             overflow = TextOverflow.Ellipsis
                         )
                     }
 
-                    // Progress bar: Countdown/status on Left above loading bar, exact window % elapsed on Right
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    // Swiss 2dp Checkpoint Timeline
+                    val blinkItems = uiState.lockScreenBlinkItems
+                    val safeBlinkStage = if (blinkItems.isNotEmpty()) blinkIndex % blinkItems.size else 0
+                    val currentBlinkText = if (blinkItems.isNotEmpty()) {
+                        blinkItems[safeBlinkStage]
+                    } else {
+                        uiState.heroCountdownSubtitleText
+                    }
+                    val jamaahCheckpointLabel = if (featuredPrayer?.settingsKey == "JUMUAH") "Jumu'ah" else "Jama'ah"
+                    val adhanFrac = uiState.adhanCheckpointFraction.coerceIn(0.14f, 0.72f)
+                    val jamaahFrac = uiState.jamaahCheckpointFraction.coerceIn((adhanFrac + 0.16f).coerceAtMost(0.88f), 0.88f)
+                    val isAdhanReached = uiState.isFeaturedPrayerActiveWindow && animatedProgress >= adhanFrac
+                    val isJamaahReached = uiState.isFeaturedPrayerActiveWindow && (uiState.isJamaahTimePassed || animatedProgress >= jamaahFrac)
+
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = uiState.heroCountdownSubtitleText,
-                                style = MaterialTheme.typography.labelLarge,
-                                fontSize = if (isTightDisplay) 11.5.sp else 13.sp,
-                                color = if (uiState.isJamaahTimePassed) RadiantAmberGlow else ElegantGold,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                softWrap = false,
-                                overflow = TextOverflow.Ellipsis,
+                            Box(
                                 modifier = Modifier
                                     .weight(1f)
-                                    .testTag("lock_screen_countdown_above_bar")
-                            )
+                                    .clickable {
+                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        blinkIndex = (blinkIndex + 1) % blinkItems.size.coerceAtLeast(1)
+                                    }
+                            ) {
+                                AnimatedContent(
+                                    targetState = safeBlinkStage,
+                                    transitionSpec = {
+                                        (slideInVertically(animationSpec = tween(220)) { h -> h / 2 } +
+                                            fadeIn(animationSpec = tween(220)))
+                                            .togetherWith(
+                                                slideOutVertically(animationSpec = tween(160)) { h -> -h / 2 } +
+                                                    fadeOut(animationSpec = tween(160))
+                                            )
+                                    },
+                                    label = "blink_stage_vertical_slide"
+                                ) { stageIdx ->
+                                    val phrase = if (blinkItems.isNotEmpty()) {
+                                        blinkItems[stageIdx % blinkItems.size]
+                                    } else {
+                                        currentBlinkText
+                                    }
+                                    Text(
+                                        text = phrase,
+                                        style = MaterialTheme.typography.labelLarge.withTabularDigits(),
+                                        fontSize = if (isTightDisplay) 12.sp else 13.sp,
+                                        color = if (uiState.isUrgentEndOfWindow) colors.accentCoral else colors.inkPrimary,
+                                        fontWeight = FontWeight.Medium,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.testTag("lock_screen_countdown_above_bar")
+                                    )
+                                }
+                            }
                             Spacer(modifier = Modifier.width(8.dp))
-                            val pctLoaded = (animatedProgress * 100).toInt()
                             Text(
-                                text = "$pctLoaded% loaded",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontSize = if (isTightDisplay) 10.5.sp else 11.5.sp,
-                                color = ElegantGold,
-                                fontWeight = FontWeight.SemiBold,
-                                maxLines = 1,
-                                softWrap = false
+                                text = "${(animatedProgress * 100).toInt()}%",
+                                style = MaterialTheme.typography.labelSmall.asMonoPrecision(),
+                                color = colors.inkTertiary
                             )
                         }
 
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(10.dp)
-                                .clip(RoundedCornerShape(50))
-                                .background(DeepSlateDarker)
-                                .testTag("notification_progress_bar")
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth(animatedProgress.coerceIn(0.04f, 1f))
-                                    .height(10.dp)
-                                    .clip(RoundedCornerShape(50))
-                                    .background(
-                                        Brush.horizontalGradient(
-                                            colors = when {
-                                                uiState.isAllTodayPrayersCompleted -> listOf(EmeraldCompleted, ElegantGold)
-                                                activeStage == AlarmTriggerType.STAGE_4_URGENT_END_OF_WINDOW ->
-                                                    listOf(RadiantAmberGlow, CoralAlert)
-                                                else -> listOf(ElegantGold, RadiantAmberGlow)
-                                            }
+                        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                            val barWidth = maxWidth
+                            val adhanOffsetX = (barWidth * adhanFrac - 5.dp).coerceAtLeast(2.dp)
+                            val jamaahOffsetX = (barWidth * jamaahFrac - 5.dp).coerceAtLeast(adhanOffsetX + 24.dp)
+
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(14.dp),
+                                    contentAlignment = Alignment.CenterStart
+                                ) {
+                                    // Razor-thin 2dp flat track
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(2.dp)
+                                            .background(colors.hairline)
+                                            .testTag("notification_progress_bar")
+                                    ) {
+                                        val barFillFraction = if (!uiState.isFeaturedPrayerActiveWindow || animatedProgress <= 0.001f) {
+                                            0f
+                                        } else {
+                                            animatedProgress.coerceIn(0.03f, 1f)
+                                        }
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth(barFillFraction)
+                                                .height(2.dp)
+                                                .background(
+                                                    if (activeStage == AlarmTriggerType.STAGE_4_URGENT_END_OF_WINDOW) {
+                                                        colors.accentCoral
+                                                    } else {
+                                                        colors.accentGold
+                                                    }
+                                                )
                                         )
+                                    }
+
+                                    // Checkpoint 1: Adhan Node
+                                    Box(
+                                        modifier = Modifier
+                                            .offset(x = adhanOffsetX)
+                                            .size(10.dp)
+                                            .clip(CircleShape)
+                                            .background(if (isAdhanReached) colors.accentGold else colors.surfaceCard)
+                                            .border(1.25.dp, colors.accentGold, CircleShape)
+                                            .clickable {
+                                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                showExactCheckpointTimes = !showExactCheckpointTimes
+                                            }
+                                            .testTag("checkpoint_adhan_marker")
                                     )
-                            )
+
+                                    // Checkpoint 2: Jama'ah Node
+                                    Box(
+                                        modifier = Modifier
+                                            .offset(x = jamaahOffsetX)
+                                            .size(10.dp)
+                                            .clip(CircleShape)
+                                            .background(if (isJamaahReached) colors.accentEmerald else colors.surfaceCard)
+                                            .border(1.25.dp, colors.accentEmerald, CircleShape)
+                                            .clickable {
+                                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                showExactCheckpointTimes = !showExactCheckpointTimes
+                                            }
+                                            .testTag("checkpoint_jamaah_marker")
+                                    )
+                                }
+
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(16.dp)
+                                        .clickable {
+                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            showExactCheckpointTimes = !showExactCheckpointTimes
+                                        }
+                                ) {
+                                    val adhanText = if (showExactCheckpointTimes) "Adhan $adhanTime" else "Adhan"
+                                    val jamaahText = if (showExactCheckpointTimes) "$jamaahCheckpointLabel $jamaahTime" else jamaahCheckpointLabel
+
+                                    val minGap = if (showExactCheckpointTimes) 88.dp else 44.dp
+                                    val maxRightReserve = if (showExactCheckpointTimes) 102.dp else 50.dp
+                                    val adhanLabelOffset = (barWidth * adhanFrac - 16.dp)
+                                        .coerceIn(0.dp, (barWidth - (minGap + maxRightReserve)).coerceAtLeast(0.dp))
+                                    val jamaahLabelOffset = (barWidth * jamaahFrac - 20.dp).coerceIn(
+                                        (adhanLabelOffset + minGap).coerceAtMost((barWidth - maxRightReserve).coerceAtLeast(0.dp)),
+                                        (barWidth - maxRightReserve).coerceAtLeast(0.dp)
+                                    )
+
+                                    Text(
+                                        text = adhanText,
+                                        style = MaterialTheme.typography.labelSmall.asMonoPrecision(),
+                                        fontSize = 9.5.sp,
+                                        color = if (isAdhanReached || showExactCheckpointTimes) colors.accentGold else colors.inkTertiary,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        modifier = Modifier.offset(x = adhanLabelOffset)
+                                    )
+
+                                    Text(
+                                        text = jamaahText,
+                                        style = MaterialTheme.typography.labelSmall.asMonoPrecision(),
+                                        fontSize = 9.5.sp,
+                                        color = if (isJamaahReached || showExactCheckpointTimes) colors.accentEmerald else colors.inkTertiary,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        modifier = Modifier.offset(x = jamaahLabelOffset)
+                                    )
+                                }
+                            }
                         }
                     }
 
-                    // Action Button: "Mark as Prayed" (locked before PST starts, unlocked starting from PST)
-                    Button(
-                        onClick = {
-                            if (canMarkPrayedNow) {
-                                onMarkAsPrayed()
-                            } else {
-                                onNotificationTriggered("$prayerName unlocks at Prayer Start Time ($pstTime)")
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp)
-                            .testTag("notification_mark_as_prayed_button"),
-                        shape = RoundedCornerShape(14.dp),
-                        border = if (!canMarkPrayedNow) BorderStroke(1.dp, SlateStrokeBorder) else null,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = when {
-                                uiState.isIshaMissedAfterMidnight || activeStage == AlarmTriggerType.STAGE_4_URGENT_END_OF_WINDOW -> CoralAlert
-                                uiState.isAllTodayPrayersCompleted -> EmeraldCompleted
-                                canMarkPrayedNow -> ElegantGold
-                                else -> DeepSlateDarker
+                    // Action Buttons (clean monochrome primary + hairline secondary split)
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Button(
+                            onClick = {
+                                if (canMarkPrayedNow) {
+                                    onMarkAsPrayedWithMode(null)
+                                } else {
+                                    onNotificationTriggered("$prayerName unlocks at Prayer Start Time ($pstTime)")
+                                }
                             },
-                            contentColor = when {
-                                uiState.isIshaMissedAfterMidnight || activeStage == AlarmTriggerType.STAGE_4_URGENT_END_OF_WINDOW -> CrispOffWhite
-                                canMarkPrayedNow || uiState.isAllTodayPrayersCompleted -> OnGoldDark
-                                else -> MutedPeriwinkle
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(46.dp)
+                                .testTag("notification_mark_as_prayed_button"),
+                            shape = RoundedCornerShape(10.dp),
+                            border = if (!canMarkPrayedNow) BorderStroke(0.5.dp, colors.hairline) else null,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = when {
+                                    isUrgentVisual -> colors.accentCoral
+                                    canMarkPrayedNow -> colors.inkPrimary
+                                    else -> colors.surfaceNested
+                                },
+                                contentColor = when {
+                                    isUrgentVisual -> Color.White
+                                    canMarkPrayedNow -> colors.surfaceCard
+                                    else -> colors.inkTertiary
+                                }
+                            ),
+                            contentPadding = PaddingValues(horizontal = 14.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (canMarkPrayedNow) Icons.Rounded.Check else Icons.Rounded.Lock,
+                                contentDescription = "Mark as Prayed",
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            val buttonLabel = when {
+                                uiState.isIshaMissedAfterMidnight -> "Log Isha Make-Up (Qada)"
+                                canMarkPrayedNow && isWithinAutoJamaahWindow ->
+                                    "Mark $prayerName Prayed · Jama'ah"
+                                canMarkPrayedNow -> "Mark $prayerName Prayed"
+                                else -> "Unlocks at $pstTime"
                             }
-                        ),
-                        contentPadding = PaddingValues(horizontal = 12.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (canMarkPrayedNow) Icons.Filled.Check else Icons.Outlined.Lock,
-                            contentDescription = "Mark as Prayed",
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = when {
-                                uiState.isIshaMissedAfterMidnight -> "Log Isha Make-Up (Qada) ✓"
-                                uiState.isAllTodayPrayersCompleted -> "All 5 Prayed ✓ (Next: $prayerName)"
-                                canMarkPrayedNow -> "Mark $prayerName as Prayed"
-                                else -> "Unlocks at Start Time ($pstTime)"
-                            },
-                            style = MaterialTheme.typography.labelLarge,
-                            fontSize = if (isTightDisplay) 12.sp else 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            softWrap = false,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                            Text(
+                                text = buttonLabel,
+                                style = MaterialTheme.typography.labelLarge.withTabularDigits(),
+                                fontSize = if (isTightDisplay) 12.sp else 13.sp,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        if (canMarkPrayedNow && !uiState.isIshaMissedAfterMidnight) {
+                            AppleHairlineDivider()
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable { onMarkAsPrayedWithMode(true) }
+                                        .padding(vertical = 8.dp)
+                                        .testTag("lock_mark_in_jamaah_chip"),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Mosque,
+                                        contentDescription = null,
+                                        tint = colors.accentEmerald,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(5.dp))
+                                    Text(
+                                        text = "Jama'ah",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontSize = 12.sp,
+                                        color = colors.accentEmerald,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+
+                                Box(
+                                    modifier = Modifier
+                                        .width(0.5.dp)
+                                        .height(18.dp)
+                                        .background(colors.hairline)
+                                )
+
+                                Row(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable { onMarkAsPrayedWithMode(false) }
+                                        .padding(vertical = 8.dp)
+                                        .testTag("lock_mark_individually_chip"),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Person,
+                                        contentDescription = null,
+                                        tint = colors.inkSecondary,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(5.dp))
+                                    Text(
+                                        text = "Individual",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontSize = 12.sp,
+                                        color = colors.inkPrimary,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
 
-            // Single clean button to test firing the live Android system notification banner (only when prayer window is active)
-            OutlinedButton(
-                onClick = {
-                    sweepTriggerCount += 1
-                    if (!uiState.isFeaturedPrayerActiveWindow) {
-                        onNotificationTriggered(
-                            "$prayerName has not started yet (Starts at $pstTime • ${uiState.heroCountdownSubtitleText})"
-                        )
-                        return@OutlinedButton
-                    }
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        val sent = PrayerNotificationHelper.showDynamicPrayerNotification(
-                            context = context,
-                            prayerName = prayerName,
-                            pstTimeFormatted = pstTime,
-                            adhanTimeFormatted = adhanTime,
-                            jamaahTimeFormatted = jamaahTime,
-                            minutesUntilJamaah = uiState.minutesUntilJamaah,
-                            minutesPassedSinceJamaah = uiState.minutesElapsedSinceJamaah,
-                            minutesRemainingUntilEnd = uiState.minutesUntilNextPrayer,
-                            repeatIntervalMinutes = uiState.nagIntervalMinutes,
-                            preJamaahAlertMinutes = uiState.preJamaahAlertMinutes,
-                            progressPercent = (uiState.notificationProgressFraction * 100).toInt(),
-                            triggerType = activeStage
-                        )
-                        if (!sent) {
-                            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                        } else {
-                            onNotificationTriggered("System notification posted for $prayerName")
-                        }
-                    } else {
-                        PrayerNotificationHelper.showDynamicPrayerNotification(
-                            context = context,
-                            prayerName = prayerName,
-                            pstTimeFormatted = pstTime,
-                            adhanTimeFormatted = adhanTime,
-                            jamaahTimeFormatted = jamaahTime,
-                            minutesUntilJamaah = uiState.minutesUntilJamaah,
-                            minutesPassedSinceJamaah = uiState.minutesElapsedSinceJamaah,
-                            minutesRemainingUntilEnd = uiState.minutesUntilNextPrayer,
-                            repeatIntervalMinutes = uiState.nagIntervalMinutes,
-                            preJamaahAlertMinutes = uiState.preJamaahAlertMinutes,
-                            progressPercent = (uiState.notificationProgressFraction * 100).toInt(),
-                            triggerType = activeStage
-                        )
-                        onNotificationTriggered("System notification posted for $prayerName")
-                    }
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp)
-                    .testTag("trigger_system_notification_button"),
-                shape = RoundedCornerShape(14.dp),
-                border = BorderStroke(
-                    1.dp,
-                    if (uiState.isFeaturedPrayerActiveWindow) ElegantGold.copy(alpha = 0.5f) else SlateStrokeBorder
-                ),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = if (uiState.isFeaturedPrayerActiveWindow) ElegantGold else MutedPeriwinkle
-                )
+            // 3. Quiet Borderless System Alert Trigger directly on canvas
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Filled.NotificationsActive,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = if (uiState.isFeaturedPrayerActiveWindow) {
-                        "Send Live System Notification"
-                    } else {
-                        "Alert Armed for $prayerName ($pstTime)"
-                    },
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    softWrap = false,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .appleSpringClickable(shape = RoundedCornerShape(8.dp)) {
+                            if (isAlertPillExpanded) {
+                                isAlertPillExpanded = false
+                            } else {
+                                triggerNotificationAction()
+                                isAlertPillExpanded = true
+                            }
+                        }
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                        .testTag("trigger_system_notification_button"),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(5.dp)
+                            .clip(CircleShape)
+                            .background(if (uiState.isFeaturedPrayerActiveWindow) colors.accentGold else colors.inkTertiary)
+                    )
+                    Text(
+                        text = if (uiState.isFeaturedPrayerActiveWindow) {
+                            "Alert Active · $prayerName $adhanTime"
+                        } else {
+                            "Alert Armed · $prayerName $pstTime"
+                        },
+                        style = MaterialTheme.typography.labelSmall.asMonoPrecision(),
+                        color = colors.inkSecondary,
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                    Icon(
+                        imageVector = if (isAlertPillExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
+                        contentDescription = "Expand alert test action",
+                        tint = colors.inkTertiary,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+
+                AnimatedVisibility(
+                    visible = isAlertPillExpanded,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()
+                ) {
+                    OutlinedButton(
+                        onClick = triggerNotificationAction,
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(0.5.dp, colors.hairlineStrong),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.inkPrimary),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                        modifier = Modifier.height(36.dp)
+                    ) {
+                        Text(
+                            text = if (uiState.isFeaturedPrayerActiveWindow) {
+                                "Send Live System Notification"
+                            } else {
+                                "Preview Upcoming Alert"
+                            },
+                            style = MaterialTheme.typography.labelLarge,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
             }
         }
     }
