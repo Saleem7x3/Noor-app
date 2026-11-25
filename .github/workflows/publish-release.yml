@@ -1,0 +1,125 @@
+name: Publish APK to GitHub Releases
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'release/*.apk'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Optional release tag (e.g. v1.0.1). Leave blank to auto-generate.'
+        required: false
+        type: string
+      release_name:
+        description: 'Optional release title. Leave blank to auto-generate.'
+        required: false
+        type: string
+      prerelease:
+        description: 'Mark as pre-release'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-apk-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish-release:
+    name: Publish /release APK to GitHub Releases
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Locate APK artifacts and resolve release metadata
+        id: meta
+        shell: bash
+        env:
+          INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
+          INPUT_RELEASE_NAME: ${{ inputs.release_name }}
+        run: |
+          set -euo pipefail
+
+          # Extract versionName and versionCode from app/build.gradle.kts
+          VERSION_NAME=$(grep -E 'versionName\s*=' app/build.gradle.kts | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/')
+          VERSION_CODE=$(grep -E 'versionCode\s*=' app/build.gradle.kts | head -n 1 | sed -E 's/[^0-9]*([0-9]+).*/\1/')
+          VERSION_NAME="${VERSION_NAME:-1.0}"
+          VERSION_CODE="${VERSION_CODE:-1}"
+
+          # Resolve primary APK from /release
+          mkdir -p dist-release
+          APK_SOURCE=""
+          if [ -f "release/NoorPrayer-debug.apk" ]; then
+            APK_SOURCE="release/NoorPrayer-debug.apk"
+          elif [ -f "release/app-debug.apk" ]; then
+            APK_SOURCE="release/app-debug.apk"
+          else
+            APK_SOURCE=$(find release -maxdepth 1 -type f -name '*.apk' | head -n 1 || true)
+          fi
+
+          if [ -z "$APK_SOURCE" ] || [ ! -f "$APK_SOURCE" ]; then
+            echo "::error::No .apk file found in release/ directory."
+            exit 1
+          fi
+
+          # Determine tag and display name
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ] && [ -n "${INPUT_RELEASE_TAG}" ]; then
+            TAG="${INPUT_RELEASE_TAG}"
+          else
+            SHORT_SHA=$(git rev-parse --short HEAD)
+            TAG="v${VERSION_NAME}-build.${GITHUB_RUN_NUMBER}-${SHORT_SHA}"
+          fi
+
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ] && [ -n "${INPUT_RELEASE_NAME}" ]; then
+            RELEASE_NAME="${INPUT_RELEASE_NAME}"
+          else
+            RELEASE_NAME="Noor Prayer ${TAG}"
+          fi
+
+          ASSET_NAME="NoorPrayer-${TAG}.apk"
+          cp "$APK_SOURCE" "dist-release/${ASSET_NAME}"
+
+          # Generate SHA-256 checksum for download verification
+          (cd dist-release && sha256sum "${ASSET_NAME}" > SHA256SUMS.txt)
+          APK_SIZE=$(du -h "dist-release/${ASSET_NAME}" | awk '{print $1}')
+          APK_SHA256=$(awk '{print $1}' dist-release/SHA256SUMS.txt)
+
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "release_name=${RELEASE_NAME}" >> "$GITHUB_OUTPUT"
+          echo "version_name=${VERSION_NAME}" >> "$GITHUB_OUTPUT"
+          echo "version_code=${VERSION_CODE}" >> "$GITHUB_OUTPUT"
+          echo "asset_name=${ASSET_NAME}" >> "$GITHUB_OUTPUT"
+          echo "apk_size=${APK_SIZE}" >> "$GITHUB_OUTPUT"
+          echo "apk_sha256=${APK_SHA256}" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release and upload APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: ${{ steps.meta.outputs.release_name }}
+          prerelease: ${{ inputs.prerelease == true }}
+          make_latest: ${{ inputs.prerelease != true }}
+          generate_release_notes: true
+          body: |
+            ## Noor Prayer Android APK
+
+            - **Version**: `${{ steps.meta.outputs.version_name }}` (code `${{ steps.meta.outputs.version_code }}`)
+            - **Artifact**: `${{ steps.meta.outputs.asset_name }}` (${{ steps.meta.outputs.apk_size }})
+            - **SHA-256**: `${{ steps.meta.outputs.apk_sha256 }}`
+
+            ### Install on Android
+            1. Download `${{ steps.meta.outputs.asset_name }}` from the **Assets** section below.
+            2. Open the downloaded APK on your Android device (enable *Install unknown apps* if prompted).
+          files: |
+            dist-release/${{ steps.meta.outputs.asset_name }}
+            dist-release/SHA256SUMS.txt
