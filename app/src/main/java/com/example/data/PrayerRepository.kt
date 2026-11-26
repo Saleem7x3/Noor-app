@@ -206,58 +206,21 @@ class PrayerRepository(private val prayerDao: PrayerDao) {
                 )
             )
 
-            // Past 48 days for rich weekly contribution grid & streak stats
-            for (daysAgo in 1..48) {
-                val dayCal = activeSheetCal.clone() as Calendar
-                dayCal.add(Calendar.DAY_OF_YEAR, -daysAgo)
-                val dateStr = sdf.format(dayCal.time)
-
-                val prayersDoneCount = when {
-                    daysAgo <= 12 -> 5
-                    daysAgo % 7 == 0 -> 3
-                    daysAgo % 5 == 0 -> 4
-                    else -> 5
-                }
-                prayerIds.forEachIndexed { index, pId ->
-                    val prayed = index < prayersDoneCount
-                    seedPrayerRecords.add(
-                        PrayerRecordEntity(
-                            dateIso = dateStr,
-                            prayerId = pId,
-                            isPrayed = prayed,
-                            isInJamaah = index != 1 || daysAgo % 3 != 0,
-                            completionStatus = if (prayed) {
-                                PrayerCompletionStatus.PRAYED_ON_TIME.name
-                            } else {
-                                PrayerCompletionStatus.MISSED_QADA.name
-                            }
-                        )
-                    )
-                }
-
-                val athkaarDoneCount = when {
-                    daysAgo <= 12 -> 3
-                    daysAgo % 4 == 0 -> 2
-                    else -> 3
-                }
-                val athkaarTypes = listOf("MORNING", "EVENING", "BEDTIME")
-                athkaarTypes.forEachIndexed { idx, aId ->
-                    val done = idx < athkaarDoneCount
-                    seedAthkaarLogs.add(
-                        AthkaarLogEntity(
-                            dateIso = dateStr,
-                            athkaarId = aId,
-                            currentCount = if (done) 33 else 12,
-                            targetCount = 33,
-                            isCompleted = done,
-                            completedTimeFormatted = if (aId == "BEDTIME" && done) "10:${30 + (daysAgo % 25)} PM" else null
-                        )
-                    )
-                }
-            }
-
             prayerDao.upsertPrayerRecords(seedPrayerRecords)
             prayerDao.insertAthkaarLogsIfEmpty(seedAthkaarLogs)
+        }
+    }
+
+    suspend fun updateCalculationMethod(methodName: String) {
+        val current = prayerDao.getUserPreferencesSync() ?: UserPreferencesEntity()
+        prayerDao.upsertUserPreferences(
+            current.copy(calculationMethod = methodName)
+        )
+    }
+
+    suspend fun upsertCatchUpPrayerRecords(records: List<PrayerRecordEntity>) {
+        if (records.isNotEmpty()) {
+            prayerDao.upsertPrayerRecords(records)
         }
     }
 

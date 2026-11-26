@@ -194,33 +194,58 @@ fun AnalyticsScreenContent(
 
                     AppleHairlineDivider()
 
+                    val hasIgnoredPriorCells = uiState.weeklyGrid.any { it.isIgnoredPriorDay }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
+                        horizontalArrangement = if (hasIgnoredPriorCells) Arrangement.SpaceBetween else Arrangement.End,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "LESS",
-                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = IbmPlexMonoFontFamily, fontSize = 9.sp),
-                            color = colors.inkTertiary
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            listOf(0.15f, 0.45f, 0.75f, 1.0f).forEach { level ->
+                        if (hasIgnoredPriorCells) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
                                 Box(
                                     modifier = Modifier
                                         .size(9.dp)
                                         .clip(RoundedCornerShape(2.5.dp))
-                                        .background(contributionCellColor(level, colors))
+                                        .background(colors.canvas)
+                                        .border(0.6.dp, colors.hairlineStrong, RoundedCornerShape(2.5.dp))
+                                )
+                                Text(
+                                    text = "IGNORED PRIOR",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontFamily = IbmPlexMonoFontFamily,
+                                        fontSize = 9.sp
+                                    ),
+                                    color = colors.inkTertiary
                                 )
                             }
                         }
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "FULL",
-                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = IbmPlexMonoFontFamily, fontSize = 9.sp),
-                            color = colors.inkSecondary
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "LESS",
+                                style = MaterialTheme.typography.labelSmall.copy(fontFamily = IbmPlexMonoFontFamily, fontSize = 9.sp),
+                                color = colors.inkTertiary
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                listOf(0.15f, 0.45f, 0.75f, 1.0f).forEach { level ->
+                                    Box(
+                                        modifier = Modifier
+                                            .size(9.dp)
+                                            .clip(RoundedCornerShape(2.5.dp))
+                                            .background(contributionCellColor(level, colors))
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "FULL",
+                                style = MaterialTheme.typography.labelSmall.copy(fontFamily = IbmPlexMonoFontFamily, fontSize = 9.sp),
+                                color = colors.inkSecondary
+                            )
+                        }
                     }
                 }
             }
@@ -473,7 +498,11 @@ private fun HistoricalDayEditorSheetContent(
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    text = "${cell.prayersCompleted}/5 Fardh prayers completed",
+                    text = if (cell.isIgnoredPriorDay) {
+                        "Prior to tracking start · Tap any status below to log manually"
+                    } else {
+                        "${cell.prayersCompleted}/5 Fardh prayers completed"
+                    },
                     style = MaterialTheme.typography.labelSmall.asMonoPrecision(),
                     color = colors.inkSecondary
                 )
@@ -500,7 +529,8 @@ private fun HistoricalDayEditorSheetContent(
                 val isJamaah = item.isPrayed && item.isInJamaah && item.completionStatus == PrayerCompletionStatus.PRAYED_ON_TIME
                 val isIndividual = item.isPrayed && !item.isInJamaah && item.completionStatus == PrayerCompletionStatus.PRAYED_ON_TIME
                 val isQazaMakeup = item.isPrayed && item.completionStatus == PrayerCompletionStatus.PRAYED_LATE
-                val isMissed = !item.isPrayed && !isLockedUpcoming
+                val isMissed = !item.isPrayed && !isLockedUpcoming && item.completionStatus == PrayerCompletionStatus.MISSED_QADA
+                val isUnmarked = !item.isPrayed && !isLockedUpcoming && !isMissed
 
                 Column(
                     modifier = Modifier
@@ -536,10 +566,11 @@ private fun HistoricalDayEditorSheetContent(
                             isJamaah -> "Jama'ah"
                             isIndividual -> "Individual"
                             isQazaMakeup -> "Qaza Done"
-                            else -> "Missed"
+                            isMissed -> "Missed"
+                            else -> "Unmarked"
                         }
                         val statusBadgeColor = when {
-                            isLockedUpcoming -> colors.inkTertiary
+                            isLockedUpcoming || isUnmarked -> colors.inkTertiary
                             isJamaah -> colors.accentEmerald
                             isIndividual -> colors.accentGold
                             isQazaMakeup -> colors.accentGoldBright
@@ -691,9 +722,15 @@ private fun GitHubStyleContributionGrid(
                 horizontalArrangement = Arrangement.spacedBy(5.dp)
             ) {
                 weekRow.forEach { cell ->
-                    val bgColor = contributionCellColor(cell.totalScore, colors)
-                    val isStrongFill = cell.totalScore >= 0.65f
+                    val isMutedPrior = cell.isIgnoredPriorDay
+                    val bgColor = if (isMutedPrior) {
+                        colors.canvas
+                    } else {
+                        contributionCellColor(cell.totalScore, colors)
+                    }
+                    val isStrongFill = !isMutedPrior && cell.totalScore >= 0.65f
                     val textColor = when {
+                        isMutedPrior -> colors.inkTertiary.copy(alpha = 0.42f)
                         cell.totalScore >= 0.88f -> colors.onAccentGold
                         cell.totalScore >= 0.65f -> colors.onAccentEmerald
                         else -> colors.inkSecondary
@@ -705,10 +742,10 @@ private fun GitHubStyleContributionGrid(
                             .clip(RoundedCornerShape(4.dp))
                             .background(bgColor)
                             .then(
-                                if (cell.isToday) {
-                                    Modifier.border(1.25.dp, colors.inkPrimary, RoundedCornerShape(4.dp))
-                                } else {
-                                    Modifier
+                                when {
+                                    cell.isToday -> Modifier.border(1.25.dp, colors.inkPrimary, RoundedCornerShape(4.dp))
+                                    isMutedPrior -> Modifier.border(0.6.dp, colors.hairline, RoundedCornerShape(4.dp))
+                                    else -> Modifier
                                 }
                             )
                             .clickable { onDayCellClick(cell) }
@@ -716,7 +753,7 @@ private fun GitHubStyleContributionGrid(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "${cell.prayersCompleted}",
+                            text = if (isMutedPrior) "–" else "${cell.prayersCompleted}",
                             style = MaterialTheme.typography.labelSmall.asMonoPrecision(),
                             fontSize = 10.sp,
                             color = textColor,

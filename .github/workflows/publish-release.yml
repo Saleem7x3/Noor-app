@@ -22,6 +22,11 @@ on:
         required: false
         default: false
         type: boolean
+      clean_release_folder:
+        description: 'Remove .apk files from /release after uploading to GitHub Releases'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -126,6 +131,7 @@ jobs:
           echo "apk_sha256=${APK_SHA256}" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release and upload APK
+        id: release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
@@ -133,7 +139,31 @@ jobs:
           prerelease: ${{ inputs.prerelease == true }}
           make_latest: ${{ inputs.prerelease != true }}
           generate_release_notes: true
+          fail_on_unmatched_files: true
           body_path: dist-release/RELEASE_NOTES.md
           files: |
             dist-release/${{ steps.meta.outputs.asset_name }}
             dist-release/SHA256SUMS.txt
+
+      - name: Optionally remove uploaded APKs from /release
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.clean_release_folder == true }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ls release/*.apk >/dev/null 2>&1; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git rm -f release/*.apk
+            git commit -m "chore(release): move APKs to GitHub Release ${{ steps.meta.outputs.tag }} [skip ci]"
+            git push
+          fi
+
+      - name: Write workflow summary
+        shell: bash
+        run: |
+          cat <<EOF >> "$GITHUB_STEP_SUMMARY"
+          ### Published Noor Prayer APK
+          - **Release**: [${{ steps.meta.outputs.release_name }}](${{ steps.release.outputs.url }})
+          - **Asset**: \`${{ steps.meta.outputs.asset_name }}\` (${{ steps.meta.outputs.apk_size }})
+          - **SHA-256**: \`${{ steps.meta.outputs.apk_sha256 }}\`
+          EOF

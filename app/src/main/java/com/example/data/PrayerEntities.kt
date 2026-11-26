@@ -187,6 +187,7 @@ data class DayContributionCell(
     val athkaarCompleted: Int, // 0..3
     val qadaCount: Int = 0,
     val isToday: Boolean = false,
+    val isIgnoredPriorDay: Boolean = false,
     val prayerStatuses: List<HistoricalDayPrayerUiModel> = emptyList()
 ) {
     val totalScore: Float

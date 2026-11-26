@@ -179,16 +179,18 @@ class ExactPrayerAlarmScheduler(private val context: Context) {
             ?: repository.getSavedSelectedCity()?.first
             ?: PrayerTimeCalculator.detectBestDefaultCityForDeviceTimeZone()
 
+        val runtimeState = alarmDataStore.runtimeStateFlow.first()
+        val calcConfig = runtimeState.toCalculationConfig()
         val cityTz = PrayerTimeCalculator.getTimeZoneForCity(city)
         val nowCal = Calendar.getInstance(cityTz)
         val nowMinutes = nowCal.get(Calendar.HOUR_OF_DAY) * 60 + nowCal.get(Calendar.MINUTE)
-        val initialCalc = PrayerTimeCalculator.calculateDailyPrayers(city, nowCal)
+        val initialCalc = PrayerTimeCalculator.calculateDailyPrayers(city, nowCal, calcConfig)
 
         val activeSheetCal = (nowCal.clone() as Calendar)
         if (nowMinutes < initialCalc.fajrMinutes) {
             // Between civil 00:00 and today's Fajr: check yesterday's night Islamic Midnight (Maghrib[D-1] to Fajr[D])
             val yesterdayCal = (nowCal.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, -1) }
-            val yesterdayCalc = PrayerTimeCalculator.calculateDailyPrayers(city, yesterdayCal)
+            val yesterdayCalc = PrayerTimeCalculator.calculateDailyPrayers(city, yesterdayCal, calcConfig)
             if ((nowMinutes + 1440) < yesterdayCalc.islamicMidnightMinutes) {
                 activeSheetCal.add(Calendar.DAY_OF_YEAR, -1)
             }
@@ -208,7 +210,7 @@ class ExactPrayerAlarmScheduler(private val context: Context) {
         val sheetStartEpochMs = sheetStartCal.timeInMillis
         val isFriday = activeSheetCal.get(Calendar.DAY_OF_WEEK) == Calendar.FRIDAY
 
-        val calc = PrayerTimeCalculator.calculateDailyPrayers(city, activeSheetCal)
+        val calc = PrayerTimeCalculator.calculateDailyPrayers(city, activeSheetCal, calcConfig)
         val settingsMap = dao.getAllPrayerSettingsSync().associateBy { it.prayerId }
         val todayRecordsMap = repository.allPrayerRecords.first()
             .filter { it.dateIso == sheetIso }
@@ -229,7 +231,7 @@ class ExactPrayerAlarmScheduler(private val context: Context) {
         )
 
         val nowMs = System.currentTimeMillis()
-        val dismissedKey = alarmDataStore.runtimeStateFlow.first().dismissedPrayerKey
+        val dismissedKey = runtimeState.dismissedPrayerKey
         var nextArmedSummary: String? = null
         var nextArmedEpochMs = 0L
 
@@ -462,7 +464,7 @@ class ExactPrayerAlarmScheduler(private val context: Context) {
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
         }
-        val tomorrowCalc = PrayerTimeCalculator.calculateDailyPrayers(city, tomorrowSheetCal)
+        val tomorrowCalc = PrayerTimeCalculator.calculateDailyPrayers(city, tomorrowSheetCal, calcConfig)
         val fajrSetting = settingsMap["FAJR"]
         val tomorrowFajrPstMin = tomorrowCalc.fajrMinutes
         val tomorrowFajrAdhanMin = if (fajrSetting?.useFixedAdhanTime ?: true) {

@@ -17,9 +17,12 @@ import com.example.data.PrayerRepository
 import com.example.data.PrayerSettingEntity
 import com.example.data.SolarWarningItemUiModel
 import com.example.data.UserPreferencesEntity
+import com.example.domain.AsrMadhab
+import com.example.domain.CalculationMethod
 import com.example.domain.CityLocation
 import com.example.domain.LocationResolutionManager
 import com.example.domain.LocationResolutionResult
+import com.example.domain.PrayerCalculationConfig
 import com.example.domain.PrayerTimeCalculator
 import com.example.notification.AlarmTriggerType
 import com.example.notification.ExactPrayerAlarmScheduler
@@ -61,6 +64,14 @@ enum class ActiveTab {
 enum class NextPrayerCountdownMode {
     NEXT_ADHAN,
     NEXT_JAMAAH
+}
+
+enum class OnboardingCatchUpChoice {
+    UNMARKED,
+    JAMAAH,
+    SOLO,
+    QAZA_DONE,
+    MISSED
 }
 
 data class PrayerDashboardUiState(
@@ -146,7 +157,14 @@ data class PrayerDashboardUiState(
     val canScheduleExactAlarms: Boolean = true,
     val themeMode: AppThemeMode = AppThemeMode.SYSTEM_AUTO,
     val heroCardStyle: HeroCardStyle = HeroCardStyle.WAVE_CARD,
-    val displayScaleMode: DisplayScaleMode = DisplayScaleMode.ADAPTIVE_CAPPED
+    val displayScaleMode: DisplayScaleMode = DisplayScaleMode.ADAPTIVE_CAPPED,
+    val isPreferencesLoaded: Boolean = false,
+    val showOnboarding: Boolean = false,
+    val calculationConfig: PrayerCalculationConfig = PrayerCalculationConfig(),
+    val analyticsStartDateIso: String? = null,
+    val ignorePriorAnalyticsDays: Boolean = false,
+    val isResolvingGps: Boolean = false,
+    val isDeviceLocationEnabled: Boolean = true
 )
 
 class PrayerHabitViewModel(
@@ -171,13 +189,22 @@ class PrayerHabitViewModel(
     private val _editingInitialTab = MutableStateFlow("JAMAAH")
     private val _statusBannerMessage = MutableStateFlow<String?>(null)
     private val _tickerSeconds = MutableStateFlow(0L)
+    private val _preferencesLoaded = MutableStateFlow(false)
+    private val _forceShowOnboarding = MutableStateFlow(false)
+    private val _isResolvingGps = MutableStateFlow(false)
 
     private var searchJob: Job? = null
     private var gpsJob: Job? = null
     private var bannerJob: Job? = null
 
     @Volatile
-    private var currentEffectiveDateIso: String = computeEffectiveDateIso(defaultInitialCity)
+    private var pendingGpsAfterLocationSettings: Boolean = false
+
+    @Volatile
+    private var currentCalculationConfig: PrayerCalculationConfig = PrayerCalculationConfig()
+
+    @Volatile
+    private var currentEffectiveDateIso: String = computeEffectiveDateIso(defaultInitialCity, currentCalculationConfig)
 
     @Volatile
     private var lastFiredLiveMilestoneKey: String = ""
@@ -189,6 +216,8 @@ class PrayerHabitViewModel(
 
     init {
         viewModelScope.launch {
+            val initialRuntime = alarmDataStore.runtimeStateFlow.first()
+            currentCalculationConfig = initialRuntime.toCalculationConfig()
             val savedSnapshot = alarmDataStore.getSavedCitySnapshot()
             repository.ensureInitialized(currentEffectiveDateIso)
             val savedCityPair = savedSnapshot ?: repository.getSavedSelectedCity()
@@ -198,16 +227,25 @@ class PrayerHabitViewModel(
                 _locationSourceStatus.value = if (isGps) {
                     "GPS • ${savedCity.name}"
                 } else {
-                    "${savedCity.name} • MWL"
+                    "${savedCity.name} • ${currentCalculationConfig.method.shortCode}"
                 }
                 repository.updateSelectedLocation(savedCity, isGps = isGps)
                 alarmDataStore.saveSelectedCitySnapshot(savedCity, isGps = isGps)
-                currentEffectiveDateIso = computeEffectiveDateIso(savedCity)
+                currentEffectiveDateIso = computeEffectiveDateIso(savedCity, currentCalculationConfig)
                 repository.ensureDailyAthkaarInitialized(currentEffectiveDateIso)
-                armDailyExactAlarmsForCity(savedCity, postActiveWindowNotificationIfNeeded = true)
+                _preferencesLoaded.value = true
+                armDailyExactAlarmsForCity(
+                    savedCity,
+                    postActiveWindowNotificationIfNeeded = initialRuntime.hasCompletedOnboarding
+                )
             } else {
+                currentEffectiveDateIso = computeEffectiveDateIso(_selectedCity.value, currentCalculationConfig)
                 repository.ensureDailyAthkaarInitialized(currentEffectiveDateIso)
-                armDailyExactAlarmsForCity(_selectedCity.value, postActiveWindowNotificationIfNeeded = true)
+                _preferencesLoaded.value = true
+                armDailyExactAlarmsForCity(
+                    _selectedCity.value,
+                    postActiveWindowNotificationIfNeeded = initialRuntime.hasCompletedOnboarding
+                )
             }
         }
         viewModelScope.launch {
@@ -224,14 +262,17 @@ class PrayerHabitViewModel(
      * Right at astronomically calculated Islamic Midnight (midpoint between that night's Maghrib
      * and the next morning's Fajr), the sheet switches to the upcoming day's Fajr-to-Isha schedule.
      */
-    private fun computeEffectiveDateIso(city: CityLocation): String {
+    private fun computeEffectiveDateIso(
+        city: CityLocation,
+        config: PrayerCalculationConfig = currentCalculationConfig
+    ): String {
         val cityTz = PrayerTimeCalculator.getTimeZoneForCity(city)
         val nowCal = Calendar.getInstance(cityTz)
         val nowMinutes = nowCal.get(Calendar.HOUR_OF_DAY) * 60 + nowCal.get(Calendar.MINUTE)
-        val calc = PrayerTimeCalculator.calculateDailyPrayers(city, nowCal)
+        val calc = PrayerTimeCalculator.calculateDailyPrayers(city, nowCal, config)
         if (nowMinutes < calc.fajrMinutes) {
             val yesterdayCal = (nowCal.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, -1) }
-            val yesterdayCalc = PrayerTimeCalculator.calculateDailyPrayers(city, yesterdayCal)
+            val yesterdayCalc = PrayerTimeCalculator.calculateDailyPrayers(city, yesterdayCal, config)
             if ((nowMinutes + 1440) < yesterdayCalc.islamicMidnightMinutes) {
                 nowCal.add(Calendar.DAY_OF_YEAR, -1)
             }
@@ -259,7 +300,10 @@ class PrayerHabitViewModel(
         val sqlCities: List<LocalCityEntity>,
         val searchQuery: String,
         val searchResults: List<CityLocation>,
-        val isSearching: Boolean
+        val isSearching: Boolean,
+        val preferencesLoaded: Boolean = false,
+        val forceShowOnboarding: Boolean = false,
+        val isResolvingGps: Boolean = false
     )
 
     private val baseControlFlow = combine(
@@ -306,6 +350,12 @@ class PrayerHabitViewModel(
         ctrl.copy(searchResults = results)
     }.combine(_isSearchingLocations) { ctrl, searching ->
         ctrl.copy(isSearching = searching)
+    }.combine(_preferencesLoaded) { ctrl, loaded ->
+        ctrl.copy(preferencesLoaded = loaded)
+    }.combine(_forceShowOnboarding) { ctrl, forceShow ->
+        ctrl.copy(forceShowOnboarding = forceShow)
+    }.combine(_isResolvingGps) { ctrl, resolvingGps ->
+        ctrl.copy(isResolvingGps = resolvingGps)
     }
 
     val uiState: StateFlow<PrayerDashboardUiState> = combine(
@@ -350,6 +400,8 @@ class PrayerHabitViewModel(
         allPrayerRecords: List<PrayerRecordEntity>,
         allAthkaar: List<AthkaarLogEntity>
     ): PrayerDashboardUiState {
+        val calcConfig = ctrl.alarmRuntime.toCalculationConfig()
+        currentCalculationConfig = calcConfig
         val cityTz = PrayerTimeCalculator.getTimeZoneForCity(ctrl.city)
         val nowCal = Calendar.getInstance(cityTz)
         val nowHour = nowCal.get(Calendar.HOUR_OF_DAY)
@@ -357,7 +409,7 @@ class PrayerHabitViewModel(
         val nowSecond = nowCal.get(Calendar.SECOND)
         val nowTotalMinutes = nowHour * 60 + nowMinute
 
-        val initialCalc = PrayerTimeCalculator.calculateDailyPrayers(ctrl.city, nowCal)
+        val initialCalc = PrayerTimeCalculator.calculateDailyPrayers(ctrl.city, nowCal, calcConfig)
 
         // Advance to the next day's Fajr-to-Isha sheet right at astronomically calculated Islamic Midnight
         // (midpoint between that night's Maghrib and the next morning's Fajr)
@@ -366,7 +418,7 @@ class PrayerHabitViewModel(
         if (nowTotalMinutes < initialCalc.fajrMinutes) {
             // Between civil 00:00 and today's Fajr: evaluate yesterday's night Islamic Midnight (Maghrib[D-1] to Fajr[D])
             val yesterdayCal = (nowCal.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, -1) }
-            val yesterdayCalc = PrayerTimeCalculator.calculateDailyPrayers(ctrl.city, yesterdayCal)
+            val yesterdayCalc = PrayerTimeCalculator.calculateDailyPrayers(ctrl.city, yesterdayCal, calcConfig)
             if ((nowTotalMinutes + 1440) < yesterdayCalc.islamicMidnightMinutes) {
                 // Still before yesterday's calculated Islamic Midnight -> active sheet is yesterday's date
                 activeSheetCal.add(Calendar.DAY_OF_YEAR, -1)
@@ -393,7 +445,7 @@ class PrayerHabitViewModel(
         val effectiveDateIso = dateFormatter.format(activeSheetCal.time)
         currentEffectiveDateIso = effectiveDateIso
 
-        val calcTimes = PrayerTimeCalculator.calculateDailyPrayers(ctrl.city, activeSheetCal)
+        val calcTimes = PrayerTimeCalculator.calculateDailyPrayers(ctrl.city, activeSheetCal, calcConfig)
         val fajrMin = calcTimes.fajrMinutes
         val sunriseMin = calcTimes.sunriseMinutes
         val dhuhrMin = calcTimes.dhuhrMinutes
@@ -657,13 +709,14 @@ class PrayerHabitViewModel(
         // marked as prayed, keep that night's Isha active on the Hero Card until Fajr (or until marked prayed).
         val previousNightCal = (activeSheetCal.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, -1) }
         val previousNightIso = dateFormatter.format(previousNightCal.time)
-        val previousNightCalc = PrayerTimeCalculator.calculateDailyPrayers(ctrl.city, previousNightCal)
+        val previousNightCalc = PrayerTimeCalculator.calculateDailyPrayers(ctrl.city, previousNightCal, calcConfig)
         val previousNightIshaRec = allPrayerRecords.firstOrNull {
             it.dateIso == previousNightIso && it.prayerId == "ISHA"
         }
         val isPostIslamicMidnightBeforeFajr = effectiveNowMinutes < fajrMin
         val isIshaMissedPastMidnight = isPostIslamicMidnightBeforeFajr &&
-            previousNightIshaRec?.isPrayed != true
+            previousNightIshaRec != null &&
+            !previousNightIshaRec.isPrayed
 
         val ishaSetting = settingsMap["ISHA"]
         val prevIshaPst = previousNightCalc.ishaMinutes
@@ -1093,12 +1146,21 @@ class PrayerHabitViewModel(
             Triple("ISHA", "Isha", "العشاء")
         )
 
+        val ignorePriorDays = ctrl.alarmRuntime.ignorePriorAnalyticsDays
+        val analyticsStartDateIso = ctrl.alarmRuntime.analyticsStartDateIso
+
         val gridCells = (48 downTo 0).map { daysAgo ->
             val c = activeSheetCal.clone() as Calendar
             c.add(Calendar.DAY_OF_YEAR, -daysAgo)
             val iso = dateFormatter.format(c.time)
             val isDayFriday = c.get(Calendar.DAY_OF_WEEK) == Calendar.FRIDAY
             val dayRecMap = recordsByDate[iso]?.associateBy { it.prayerId }.orEmpty()
+            val hasLoggedRecords = dayRecMap.isNotEmpty()
+            val isIgnoredPrior = (iso != effectiveDateIso) &&
+                ignorePriorDays &&
+                analyticsStartDateIso != null &&
+                iso < analyticsStartDateIso &&
+                !hasLoggedRecords
 
             val dayPrayerStatuses: List<HistoricalDayPrayerUiModel> = if (iso == effectiveDateIso) {
                 prayerItems.map { p ->
@@ -1118,32 +1180,37 @@ class PrayerHabitViewModel(
                     val rec = dayRecMap[pId]
                     val resolvedEng = if (pId == "DHUHR" && isDayFriday) "Jumu'ah" else eng
                     val resolvedArab = if (pId == "DHUHR" && isDayFriday) "الجمعة" else arab
-                    val isPrayed = rec?.isPrayed ?: true
+                    val isPrayed = rec?.isPrayed ?: false
                     val status = when (rec?.completionStatus) {
                         PrayerCompletionStatus.MISSED_QADA.name -> PrayerCompletionStatus.MISSED_QADA
                         PrayerCompletionStatus.PRAYED_LATE.name -> PrayerCompletionStatus.PRAYED_LATE
+                        PrayerCompletionStatus.PRAYED_ON_TIME.name -> PrayerCompletionStatus.PRAYED_ON_TIME
                         PrayerCompletionStatus.PENDING.name -> PrayerCompletionStatus.PENDING
-                        else -> if (isPrayed) PrayerCompletionStatus.PRAYED_ON_TIME else PrayerCompletionStatus.MISSED_QADA
+                        else -> if (isPrayed) PrayerCompletionStatus.PRAYED_ON_TIME else PrayerCompletionStatus.PENDING
                     }
                     HistoricalDayPrayerUiModel(
                         prayerId = pId,
                         nameEnglish = resolvedEng,
                         nameArabic = resolvedArab,
                         isPrayed = isPrayed,
-                        isInJamaah = rec?.isInJamaah ?: isPrayed,
+                        isInJamaah = rec?.isInJamaah ?: false,
                         completionStatus = status
                     )
                 }
             }
 
-            val pDone = dayPrayerStatuses.count { it.isPrayed }
-            val aDone = if (iso == effectiveDateIso) {
-                todayAthkaarDone
-            } else {
-                athkaarByDate[iso]?.count { it.isCompleted } ?: 2
+            val pDone = if (isIgnoredPrior) 0 else dayPrayerStatuses.count { it.isPrayed }
+            val aDone = when {
+                isIgnoredPrior -> 0
+                iso == effectiveDateIso -> todayAthkaarDone
+                else -> athkaarByDate[iso]?.count { it.isCompleted } ?: 0
             }
-            val qada = dayPrayerStatuses.count {
-                !it.isPrayed && it.completionStatus == PrayerCompletionStatus.MISSED_QADA
+            val qada = if (isIgnoredPrior) {
+                0
+            } else {
+                dayPrayerStatuses.count {
+                    !it.isPrayed && it.completionStatus == PrayerCompletionStatus.MISSED_QADA
+                }
             }
 
             DayContributionCell(
@@ -1154,11 +1221,13 @@ class PrayerHabitViewModel(
                 athkaarCompleted = aDone,
                 qadaCount = qada,
                 isToday = iso == effectiveDateIso,
+                isIgnoredPriorDay = isIgnoredPrior,
                 prayerStatuses = dayPrayerStatuses
             )
         }
 
-        val autoDetectedQaza = gridCells.sumOf { it.qadaCount }
+        val trackedCells = gridCells.filter { !it.isIgnoredPriorDay }
+        val autoDetectedQaza = trackedCells.sumOf { it.qadaCount }
         val manualQaza = ctrl.alarmRuntime.manualQazaBacklogCount
         val totalQazaBacklog = (autoDetectedQaza + manualQaza).coerceAtLeast(0)
         val pendingQazaNames = buildList {
@@ -1171,21 +1240,55 @@ class PrayerHabitViewModel(
         }
 
         var streak = 0
-        for (cell in gridCells.reversed()) {
+        for (cell in trackedCells.reversed()) {
             if (cell.isToday) {
-                if (cell.prayersCompleted >= 2) streak++
+                if (cell.prayersCompleted >= 1) {
+                    streak++
+                }
             } else if (cell.prayersCompleted == 5) {
                 streak++
             } else {
                 break
             }
         }
-        val totalPrayedAll = allPrayerRecords.count { it.isPrayed }.coerceAtLeast(1)
-        val jamaahCountAll = allPrayerRecords.count { it.isPrayed && it.isInJamaah }
-        val jamaahPct = ((jamaahCountAll * 100f) / totalPrayedAll).toInt().coerceIn(75, 100)
-        val consistencyPct = ((gridCells.sumOf { it.prayersCompleted } * 100f) / (gridCells.size * 5f))
-            .toInt()
-            .coerceIn(80, 100)
+
+        val trackedDateSet = trackedCells.map { it.dateIso }.toSet()
+        val trackedRecords = allPrayerRecords.filter { it.dateIso in trackedDateSet }
+        val totalPrayedAll = trackedRecords.count { it.isPrayed }
+        val jamaahCountAll = trackedRecords.count { it.isPrayed && it.isInJamaah }
+        val jamaahPct = if (totalPrayedAll > 0) {
+            ((jamaahCountAll * 100f) / totalPrayedAll).toInt().coerceIn(0, 100)
+        } else {
+            0
+        }
+
+        val activeTrackedCells = trackedCells.filter { cell ->
+            cell.isToday ||
+                recordsByDate[cell.dateIso]?.isNotEmpty() == true ||
+                (analyticsStartDateIso != null && cell.dateIso >= analyticsStartDateIso)
+        }
+        var totalCompletedForConsistency = 0
+        var totalExpectedForConsistency = 0
+        activeTrackedCells.forEach { cell ->
+            if (cell.isToday) {
+                val todayEligibleCount = prayerItems.count { it.isPrayed || it.canMarkPrayed }
+                if (todayEligibleCount > 0) {
+                    totalCompletedForConsistency += cell.prayersCompleted
+                    totalExpectedForConsistency += todayEligibleCount
+                }
+            } else {
+                totalCompletedForConsistency += cell.prayersCompleted
+                totalExpectedForConsistency += 5
+            }
+        }
+        val consistencyPct = if (totalExpectedForConsistency > 0) {
+            ((totalCompletedForConsistency * 100f) / totalExpectedForConsistency).toInt().coerceIn(0, 100)
+        } else {
+            0
+        }
+
+        val shouldShowOnboarding = ctrl.preferencesLoaded &&
+            (!ctrl.alarmRuntime.hasCompletedOnboarding || ctrl.forceShowOnboarding)
 
         return PrayerDashboardUiState(
             displayMode = ctrl.displayMode,
@@ -1250,7 +1353,7 @@ class PrayerHabitViewModel(
             todayQadaCount = todayQadaCount,
             todayAthkaarCompleted = todayAthkaarDone,
             todayGoalFraction = totalTodayGoals.coerceIn(0f, 1f),
-            currentStreakDays = streak.coerceAtLeast(12),
+            currentStreakDays = streak,
             jamaahRatePercent = jamaahPct,
             consistencyPercent = consistencyPct,
             isFridayActiveSheet = isFridaySheet,
@@ -1273,7 +1376,14 @@ class PrayerHabitViewModel(
             canScheduleExactAlarms = alarmScheduler.canScheduleExactAlarms(),
             themeMode = AppThemeMode.fromStoredName(ctrl.alarmRuntime.themeMode),
             heroCardStyle = HeroCardStyle.fromStoredName(ctrl.alarmRuntime.heroCardStyle),
-            displayScaleMode = DisplayScaleMode.fromStoredName(ctrl.alarmRuntime.displayScaleMode)
+            displayScaleMode = DisplayScaleMode.fromStoredName(ctrl.alarmRuntime.displayScaleMode),
+            isPreferencesLoaded = ctrl.preferencesLoaded,
+            showOnboarding = shouldShowOnboarding,
+            calculationConfig = calcConfig,
+            analyticsStartDateIso = analyticsStartDateIso,
+            ignorePriorAnalyticsDays = ignorePriorDays,
+            isResolvingGps = ctrl.isResolvingGps,
+            isDeviceLocationEnabled = locationManager.isDeviceLocationEnabled()
         )
     }
 
@@ -1303,10 +1413,21 @@ class PrayerHabitViewModel(
 
     fun refreshPermissionsAndResyncAlarms() {
         _tickerSeconds.value += 1L
+        if (pendingGpsAfterLocationSettings && locationManager.isDeviceLocationEnabled()) {
+            pendingGpsAfterLocationSettings = false
+            requestGpsOrSqliteFallback()
+            return
+        }
         armDailyExactAlarmsForCity(
             city = _selectedCity.value,
             postActiveWindowNotificationIfNeeded = false
         )
+    }
+
+    fun isDeviceLocationEnabled(): Boolean = locationManager.isDeviceLocationEnabled()
+
+    fun markPendingGpsAfterLocationSettings() {
+        pendingGpsAfterLocationSettings = true
     }
 
     /**
@@ -1435,10 +1556,11 @@ class PrayerHabitViewModel(
     fun selectCity(city: CityLocation) {
         // Cancel any in-flight GPS lookup so it never overwrites a manual selection
         gpsJob?.cancel()
+        _isResolvingGps.value = false
         _selectedCity.value = city
-        _locationSourceStatus.value = "${city.name} • MWL"
+        _locationSourceStatus.value = "${city.name} • ${currentCalculationConfig.method.shortCode}"
         _locationSearchQuery.value = ""
-        currentEffectiveDateIso = computeEffectiveDateIso(city)
+        currentEffectiveDateIso = computeEffectiveDateIso(city, currentCalculationConfig)
         viewModelScope.launch {
             repository.updateSelectedLocation(city, isGps = false)
             alarmDataStore.saveSelectedCitySnapshot(city, isGps = false)
@@ -1468,28 +1590,140 @@ class PrayerHabitViewModel(
     fun requestGpsOrSqliteFallback() {
         gpsJob?.cancel()
         gpsJob = viewModelScope.launch {
-            showTransientBanner("Acquiring GPS / Network location fix...")
-            val fallbackList = uiState.value.availableCities
-            when (val res = locationManager.resolveLocationWithFallback(fallbackList, _selectedCity.value)) {
-                is LocationResolutionResult.GpsResolved -> {
-                    _selectedCity.value = res.cityLocation
-                    _locationSourceStatus.value = "GPS • ${res.cityLocation.name}"
-                    currentEffectiveDateIso = computeEffectiveDateIso(res.cityLocation)
-                    repository.updateSelectedLocation(res.cityLocation, isGps = true)
-                    alarmDataStore.saveSelectedCitySnapshot(res.cityLocation, isGps = true)
-                    armDailyExactAlarmsForCity(res.cityLocation)
-                    showTransientBanner("GPS Locked: ${res.cityLocation.name} (${String.format(Locale.US, "%.2f", res.rawLatitude)}°, ${String.format(Locale.US, "%.2f", res.rawLongitude)}°)")
+            _isResolvingGps.value = true
+            try {
+                showTransientBanner("Acquiring GPS / Network location fix...")
+                val fallbackList = uiState.value.availableCities
+                when (val res = locationManager.resolveLocationWithFallback(fallbackList, _selectedCity.value)) {
+                    is LocationResolutionResult.GpsResolved -> {
+                        _selectedCity.value = res.cityLocation
+                        _locationSourceStatus.value = "GPS • ${res.cityLocation.name}"
+                        currentEffectiveDateIso = computeEffectiveDateIso(res.cityLocation, currentCalculationConfig)
+                        repository.updateSelectedLocation(res.cityLocation, isGps = true)
+                        alarmDataStore.saveSelectedCitySnapshot(res.cityLocation, isGps = true)
+                        armDailyExactAlarmsForCity(res.cityLocation)
+                        showTransientBanner("GPS Locked: ${res.cityLocation.name} (${String.format(Locale.US, "%.2f", res.rawLatitude)}°, ${String.format(Locale.US, "%.2f", res.rawLongitude)}°)")
+                    }
+                    is LocationResolutionResult.FallbackSqliteCity -> {
+                        _selectedCity.value = res.cityLocation
+                        _locationSourceStatus.value = "${res.cityLocation.name} • ${currentCalculationConfig.method.shortCode}"
+                        currentEffectiveDateIso = computeEffectiveDateIso(res.cityLocation, currentCalculationConfig)
+                        repository.updateSelectedLocation(res.cityLocation, isGps = false)
+                        alarmDataStore.saveSelectedCitySnapshot(res.cityLocation, isGps = false)
+                        armDailyExactAlarmsForCity(res.cityLocation)
+                        showTransientBanner(res.reason)
+                    }
                 }
-                is LocationResolutionResult.FallbackSqliteCity -> {
-                    _selectedCity.value = res.cityLocation
-                    _locationSourceStatus.value = "${res.cityLocation.name} • MWL"
-                    currentEffectiveDateIso = computeEffectiveDateIso(res.cityLocation)
-                    repository.updateSelectedLocation(res.cityLocation, isGps = false)
-                    alarmDataStore.saveSelectedCitySnapshot(res.cityLocation, isGps = false)
-                    armDailyExactAlarmsForCity(res.cityLocation)
-                    showTransientBanner(res.reason)
-                }
+            } finally {
+                _isResolvingGps.value = false
             }
+        }
+    }
+
+    fun updateCalculationConfig(config: PrayerCalculationConfig) {
+        currentCalculationConfig = config
+        viewModelScope.launch {
+            alarmDataStore.setCalculationConfig(config)
+            repository.updateCalculationMethod(config.method.name)
+            val city = _selectedCity.value
+            if (!_locationSourceStatus.value.startsWith("GPS")) {
+                _locationSourceStatus.value = "${city.name} • ${config.method.shortCode}"
+            }
+            currentEffectiveDateIso = computeEffectiveDateIso(city, config)
+            armDailyExactAlarmsForCity(city, postActiveWindowNotificationIfNeeded = false)
+            showTransientBanner("Calculation updated: ${config.shortSummaryBadge}")
+        }
+    }
+
+    fun updateAnalyticsTrackingPreference(ignorePriorDays: Boolean, startDateIso: String? = null) {
+        viewModelScope.launch {
+            val resolvedStart = startDateIso ?: uiState.value.analyticsStartDateIso ?: currentEffectiveDateIso
+            alarmDataStore.setAnalyticsTrackingPreference(
+                startDateIso = resolvedStart,
+                ignorePriorDays = ignorePriorDays
+            )
+            val msg = if (ignorePriorDays) {
+                "Analytics tracking from $resolvedStart (prior days muted)"
+            } else {
+                "Prior days enabled for manual logging in Analytics"
+            }
+            showTransientBanner(msg)
+        }
+    }
+
+    fun reopenOnboarding() {
+        _forceShowOnboarding.value = true
+    }
+
+    fun completeOnboarding(
+        catchUpDateIso: String?,
+        catchUpChoices: Map<String, OnboardingCatchUpChoice>,
+        ignorePriorDays: Boolean
+    ) {
+        viewModelScope.launch {
+            val city = _selectedCity.value
+            val config = currentCalculationConfig
+            val activeIso = computeEffectiveDateIso(city, config)
+            currentEffectiveDateIso = activeIso
+
+            if (!catchUpDateIso.isNullOrBlank() && catchUpChoices.isNotEmpty()) {
+                val nowMs = System.currentTimeMillis()
+                val recordsToUpsert = catchUpChoices.mapNotNull { (prayerId, choice) ->
+                    when (choice) {
+                        OnboardingCatchUpChoice.UNMARKED -> null
+                        OnboardingCatchUpChoice.JAMAAH -> PrayerRecordEntity(
+                            dateIso = catchUpDateIso,
+                            prayerId = prayerId,
+                            isPrayed = true,
+                            isInJamaah = true,
+                            completedAtMillis = nowMs,
+                            completionStatus = PrayerCompletionStatus.PRAYED_ON_TIME.name
+                        )
+                        OnboardingCatchUpChoice.SOLO -> PrayerRecordEntity(
+                            dateIso = catchUpDateIso,
+                            prayerId = prayerId,
+                            isPrayed = true,
+                            isInJamaah = false,
+                            completedAtMillis = nowMs,
+                            completionStatus = PrayerCompletionStatus.PRAYED_ON_TIME.name
+                        )
+                        OnboardingCatchUpChoice.QAZA_DONE -> PrayerRecordEntity(
+                            dateIso = catchUpDateIso,
+                            prayerId = prayerId,
+                            isPrayed = true,
+                            isInJamaah = false,
+                            completedAtMillis = nowMs,
+                            completionStatus = PrayerCompletionStatus.PRAYED_LATE.name
+                        )
+                        OnboardingCatchUpChoice.MISSED -> PrayerRecordEntity(
+                            dateIso = catchUpDateIso,
+                            prayerId = prayerId,
+                            isPrayed = false,
+                            isInJamaah = false,
+                            completedAtMillis = 0L,
+                            completionStatus = PrayerCompletionStatus.MISSED_QADA.name
+                        )
+                    }
+                }
+                repository.upsertCatchUpPrayerRecords(recordsToUpsert)
+            }
+
+            val startIso = if (!catchUpDateIso.isNullOrBlank() &&
+                catchUpDateIso < activeIso &&
+                catchUpChoices.values.any { it != OnboardingCatchUpChoice.UNMARKED }
+            ) {
+                catchUpDateIso
+            } else {
+                activeIso
+            }
+
+            alarmDataStore.completeOnboarding(
+                analyticsStartDateIso = startIso,
+                ignorePriorDays = ignorePriorDays
+            )
+            _forceShowOnboarding.value = false
+            armDailyExactAlarmsForCity(city, postActiveWindowNotificationIfNeeded = true)
+            showTransientBanner("Setup complete · ${city.name} (${config.shortSummaryBadge})")
         }
     }
 

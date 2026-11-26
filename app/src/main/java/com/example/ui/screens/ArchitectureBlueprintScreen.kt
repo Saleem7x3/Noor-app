@@ -6,8 +6,10 @@ import android.content.Intent
 import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -24,9 +26,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.GpsFixed
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -51,11 +56,15 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.domain.PrayerCalculationConfig
 import com.example.domain.PrayerTimeCalculator
 import com.example.notification.PrayerNotificationHelper
 import com.example.ui.components.AppleHairlineDivider
 import com.example.ui.components.AppleSegmentedControl
+import com.example.ui.components.AsrMadhabSelectorBlock
 import com.example.ui.components.AutoSizeSingleLineText
+import com.example.ui.components.CalculationLivePreviewStrip
+import com.example.ui.components.CalculationMethodSelectorList
 import com.example.ui.components.SwissInsetGroup
 import com.example.ui.components.SwissSectionLabel
 import com.example.ui.theme.AppThemeMode
@@ -83,11 +92,17 @@ fun ArchitectureBlueprintScreenContent(
     onUpdateThemeMode: (AppThemeMode) -> Unit = {},
     onUpdateHeroCardStyle: (HeroCardStyle) -> Unit = {},
     onUpdateDisplayScaleMode: (DisplayScaleMode) -> Unit = {},
+    onUpdateCalculationConfig: (PrayerCalculationConfig) -> Unit = {},
+    onUpdateAnalyticsTrackingPreference: (Boolean, String?) -> Unit = { _, _ -> },
+    onReopenOnboarding: () -> Unit = {},
+    isDeviceLocationEnabled: () -> Boolean = { true },
+    onMarkPendingGpsAfterSettings: () -> Unit = {},
     onBannerMessage: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val colors = NoorTheme.colors
+    var isMethodPickerExpanded by remember { mutableStateOf(false) }
 
     DisposableEffect(Unit) {
         onDispose {
@@ -215,8 +230,18 @@ fun ArchitectureBlueprintScreenContent(
 
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
-    ) { _ ->
-        onRequestGpsLocation()
+    ) { results ->
+        val granted = results[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+            results[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        if (granted && !isDeviceLocationEnabled()) {
+            onMarkPendingGpsAfterSettings()
+            onBannerMessage("Turn on Location Services in Android Settings to resolve GPS")
+            runCatching {
+                context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+            }
+        } else {
+            onRequestGpsLocation()
+        }
     }
 
     val nextPrayerName = uiState.featuredPrayer?.nameEnglish ?: "Fajr"
@@ -727,13 +752,19 @@ fun ArchitectureBlueprintScreenContent(
             }
         }
 
-        // Section 5: Location & Calculation
+        // Section 5: Location & Calculation Method
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             SwissSectionLabel(
-                title = "Location & Method",
-                trailingText = "MWL 18°/17°"
+                title = "Location & Calculation",
+                trailingText = uiState.calculationConfig.shortSummaryBadge
             )
-            SwissInsetGroup {
+
+            CalculationLivePreviewStrip(
+                city = uiState.selectedCity,
+                config = uiState.calculationConfig
+            )
+
+            SwissInsetGroup(modifier = Modifier.testTag("settings_location_method_card")) {
                 Column(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -779,9 +810,161 @@ fun ArchitectureBlueprintScreenContent(
                     ) {
                         Icon(Icons.Rounded.GpsFixed, contentDescription = null, modifier = Modifier.size(15.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(
+                        AutoSizeSingleLineText(
                             text = "Refresh Current GPS Location",
                             style = MaterialTheme.typography.labelLarge,
+                            maxFontSize = 13.5.sp,
+                            minFontSize = 11.sp,
+                            color = colors.surfaceCard,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+
+                AppleHairlineDivider(modifier = Modifier.padding(horizontal = 16.dp))
+
+                // 5B. Asr Madhab Selector
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "Asr Juristic Method (Madhab)",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = colors.inkPrimary,
+                        fontWeight = FontWeight.Medium
+                    )
+                    AsrMadhabSelectorBlock(
+                        selectedMadhab = uiState.calculationConfig.asrMadhab,
+                        onSelectMadhab = { madhab ->
+                            onUpdateCalculationConfig(uiState.calculationConfig.copy(asrMadhab = madhab))
+                        }
+                    )
+                }
+
+                AppleHairlineDivider(modifier = Modifier.padding(horizontal = 16.dp))
+
+                // 5C. Calculation Convention & Manual Angles Picker
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { isMethodPickerExpanded = !isMethodPickerExpanded }
+                        .padding(horizontal = 16.dp, vertical = 14.dp)
+                        .testTag("settings_calculation_method_expand_row"),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Text(
+                            text = "Calculation Convention",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = colors.inkPrimary,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "${uiState.calculationConfig.method.displayName} (${uiState.calculationConfig.angleSpecLabel})",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.accentGold
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Icon(
+                        imageVector = if (isMethodPickerExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                        contentDescription = if (isMethodPickerExpanded) "Collapse methods" else "Choose calculation method",
+                        tint = colors.inkTertiary
+                    )
+                }
+            }
+
+            AnimatedVisibility(visible = isMethodPickerExpanded) {
+                CalculationMethodSelectorList(
+                    config = uiState.calculationConfig,
+                    onUpdateConfig = onUpdateCalculationConfig
+                )
+            }
+        }
+
+        // Section 6: Analytics History & Setup Guide
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SwissSectionLabel(
+                title = "Analytics & Setup",
+                trailingText = uiState.analyticsStartDateIso ?: "ALL DAYS"
+            )
+            SwissInsetGroup(modifier = Modifier.testTag("settings_analytics_setup_card")) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Text(
+                            text = "Ignore Prior Days in Analytics",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = colors.inkPrimary,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = if (uiState.ignorePriorAnalyticsDays) {
+                                "Days before ${uiState.analyticsStartDateIso ?: "today"} appear muted and are excluded from stats (still tappable)"
+                            } else {
+                                "All 7 weeks are open for manual logging"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.inkSecondary
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(12.dp))
+
+                    Switch(
+                        checked = uiState.ignorePriorAnalyticsDays,
+                        onCheckedChange = { checked ->
+                            onUpdateAnalyticsTrackingPreference(checked, uiState.analyticsStartDateIso)
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = colors.accentGold,
+                            uncheckedThumbColor = colors.inkTertiary,
+                            uncheckedTrackColor = colors.segmentedTrack,
+                            uncheckedBorderColor = colors.hairlineStrong
+                        ),
+                        modifier = Modifier.testTag("settings_ignore_prior_days_toggle")
+                    )
+                }
+
+                AppleHairlineDivider(modifier = Modifier.padding(horizontal = 16.dp))
+
+                Box(modifier = Modifier.padding(16.dp)) {
+                    OutlinedButton(
+                        onClick = onReopenOnboarding,
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(0.5.dp, colors.hairlineStrong),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp)
+                            .testTag("settings_rerun_onboarding_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.RestartAlt,
+                            contentDescription = null,
+                            tint = colors.inkPrimary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        AutoSizeSingleLineText(
+                            text = "Re-run First-Time Setup Guide",
+                            style = MaterialTheme.typography.labelLarge,
+                            maxFontSize = 13.5.sp,
+                            minFontSize = 11.sp,
+                            color = colors.inkPrimary,
                             fontWeight = FontWeight.Medium
                         )
                     }

@@ -11,8 +11,16 @@
 
 ## Features
 
+### First-Time Guided Onboarding
+- **4-Step Interactive Setup**: Automatically guides new users on first launch (and re-runnable anytime from **Settings**):
+  1. **Location & Live GPS**: Search worldwide cities, enter custom coordinates, or tap **Use Live GPS** (requests location permission and opens Android Location Settings automatically if device GPS is off, resolving as soon as you return).
+  2. **Asr Madhab & Calculation Convention**: Choose **Standard (Shafi'i, Maliki, Hanbali — 1× shadow)** or **Hanafi (Later Asr — 2× shadow)** and pick from **12 global calculation presets** or **Manual Custom Angles** with live Fajr/Asr/Isha previews.
+  3. **Time-Aware Prayer Catch-Up**: Marks prayers already passed today—or, if opened **past midnight before Fajr**, prompts for **yesterday's 5 prayers (Fajr–Isha)** using the 4-state selector (`Jama'ah`, `Solo`, `Qaza`, `Missed`).
+  4. **Analytics Starting Point**: Choose to **Start Fresh from Today (Ignore Prior Days)** or **Mark Prior Days Manually**.
+
 ### Astronomical Prayer Engine
-- **Muslim World League (MWL 18°/17°)** solar calculation engine for Fajr, Dhuhr, Asr, Maghrib, and Isha.
+- **12 Global Calculation Presets + Manual Angles**: Supports **MWL**, **Karachi**, **ISNA**, **Umm al-Qura (Makkah)**, **Egyptian Authority**, **Dubai / Gulf**, **Qatar**, **Kuwait**, **Turkey (Diyanet)**, **Singapore (MUIS)**, **Tehran**, **Moonsighting**, and **Manual / Custom** Fajr & Isha twilight angles (or fixed minutes after Maghrib).
+- **Asr Juristic School (Madhab)**: Switch anytime between **Standard (Shafi'i, Maliki, Hanbali — 1× shadow)** and **Hanafi (Later Asr — 2× shadow)**.
 - **Three-Tier Schedule**: Independently configure **Prayer Start Time (PST)**, **Mosque Adhan**, and **Jama'ah (Congregation)** times using either fixed clock times or minute offsets (with keyboard and clock dial pickers).
 - **Friday Jumu'ah Support**: Separate daily Dhuhr and Friday Jumu'ah timing configurations.
 - **True Islamic Midnight & Late-Night Isha**: Calculates true solar Islamic midnight (midpoint between Maghrib and Fajr) and keeps unprayed Isha actionable on the hero screen until Fajr.
@@ -37,13 +45,13 @@
 - **Masjid Auto-Silence**: Automatically silences sound and vibration for 15 minutes starting at Jama'ah time.
 
 ### Analytics, Qaza Backlog & Daily Athkaar
-- **Editorial KPI Strip**: Instant glance at Today's goal completion, active streak, Jama'ah rate, and on-time consistency.
-- **7-Week Consistency Grid**: Tap any day square to inspect or edit historical prayers (`Jama'ah`, `Individual`, `Qaza Done`, or `Missed`).
+- **Editorial KPI Strip**: Honest, zero-inflated metrics showing Today's goal completion, active streak, Jama'ah rate, and on-time consistency.
+- **7-Week Consistency Grid with Muted Prior Days**: Tap any day square to inspect or edit historical prayers (`Jama'ah`, `Individual`, `Qaza Done`, or `Missed`). When **Ignore Prior Days** is enabled, days before your tracking start date render in a distinct muted tone (`–`), are excluded from Qaza and KPI stats, and remain tappable to log manually anytime.
 - **Qaza Make-Up Backlog**: Tracks auto-detected missed prayers and manual make-up completions, surfaced in both Analytics and the persistent bottom alert squircle.
 - **Daily Athkaar**: Unified Morning, Evening, and Bedtime Athkaar trackers with tactile step counters and completion haptics.
 
 ### Worldwide Location & GPS
-- Searchable built-in world cities database, live place search, custom latitude/longitude entry, and one-tap Fused Location GPS resolution.
+- Searchable built-in world cities database, live place search, custom latitude/longitude entry, and one-tap Fused Location GPS resolution with automatic Android Location Settings redirection when GPS is disabled.
 
 ---
 
@@ -51,17 +59,18 @@
 
 ```text
 MainActivity (Edge-to-Edge + Dynamic Light/Dark System Bars)
+ ├── OnboardingScreenContent              (First-Time 4-Step Setup Flow)
  └── NoorPrayerAppRoot (Floating Minimal Dock + 4 Screens)
       ├── NotificationLockScreenContent   (Alerts & Lock Screen Preview)
       ├── PrayerHomeScreenContent         (Open Hero, Daily Prayers, Makruh, Modals)
       ├── AnalyticsScreenContent          (KPI Strip, Qaza Backlog, 7w Grid, Athkaar)
-      └── ArchitectureBlueprintScreen     (Appearance, Reminders, Audio, Masjid, GPS)
+      └── ArchitectureBlueprintScreen     (Appearance, Calculation, Madhab, Reminders, GPS)
                     │
                     ▼
            PrayerHabitViewModel (StateFlow<PrayerDashboardUiState>)
-          ├── PrayerTimeCalculator        (Astronomical MWL + Islamic Midnight)
+          ├── PrayerTimeCalculator        (12 Global Methods + Manual Angles + Hanafi/Standard Asr)
           ├── PrayerHabitDatabase (Room)  (Daily logs, custom timings, Athkaar, history)
-          ├── PrayerAlarmDataStore        (Preferences, theme mode, Hijri offset, intervals)
+          ├── PrayerAlarmDataStore        (Onboarding, calculation config, theme, intervals)
           └── PrayerAlarmScheduler        (Exact AlarmManager + BroadcastReceiver loop)
 ```
 

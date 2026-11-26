@@ -10,7 +10,10 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.example.domain.AsrMadhab
+import com.example.domain.CalculationMethod
 import com.example.domain.CityLocation
+import com.example.domain.PrayerCalculationConfig
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -43,8 +46,26 @@ data class AlarmLoopRuntimeState(
     val themeMode: String = "SYSTEM_AUTO",
     val heroCardStyle: String = "WAVE_CARD",
     val displayScaleMode: String = "ADAPTIVE_CAPPED",
-    val dismissedPrayerKey: String? = null
-)
+    val dismissedPrayerKey: String? = null,
+    val hasCompletedOnboarding: Boolean = false,
+    val calculationMethod: String = CalculationMethod.MWL.name,
+    val asrMadhab: String = AsrMadhab.STANDARD.name,
+    val manualFajrAngle: Double = 18.0,
+    val manualIshaUseFixedMinutes: Boolean = false,
+    val manualIshaAngle: Double = 17.0,
+    val manualIshaMinutesAfterMaghrib: Int = 90,
+    val analyticsStartDateIso: String? = null,
+    val ignorePriorAnalyticsDays: Boolean = false
+) {
+    fun toCalculationConfig(): PrayerCalculationConfig = PrayerCalculationConfig(
+        method = CalculationMethod.fromKey(calculationMethod),
+        asrMadhab = AsrMadhab.fromKey(asrMadhab),
+        manualFajrAngle = manualFajrAngle.coerceIn(10.0, 24.0),
+        manualIshaUseFixedMinutes = manualIshaUseFixedMinutes,
+        manualIshaAngle = manualIshaAngle.coerceIn(10.0, 24.0),
+        manualIshaMinutesAfterMaghrib = manualIshaMinutesAfterMaghrib.coerceIn(45, 150)
+    )
+}
 
 class PrayerAlarmDataStore(private val context: Context) {
 
@@ -73,6 +94,15 @@ class PrayerAlarmDataStore(private val context: Context) {
         val HERO_CARD_STYLE = stringPreferencesKey("hero_card_style")
         val DISPLAY_SCALE_MODE = stringPreferencesKey("display_scale_mode")
         val DISMISSED_PRAYER_KEY = stringPreferencesKey("dismissed_prayer_key")
+        val HAS_COMPLETED_ONBOARDING = booleanPreferencesKey("has_completed_onboarding")
+        val CALCULATION_METHOD = stringPreferencesKey("calculation_method")
+        val ASR_MADHAB = stringPreferencesKey("asr_madhab")
+        val MANUAL_FAJR_ANGLE = doublePreferencesKey("manual_fajr_angle")
+        val MANUAL_ISHA_USE_FIXED_MINUTES = booleanPreferencesKey("manual_isha_use_fixed_minutes")
+        val MANUAL_ISHA_ANGLE = doublePreferencesKey("manual_isha_angle")
+        val MANUAL_ISHA_MINUTES_AFTER_MAGHRIB = intPreferencesKey("manual_isha_minutes_after_maghrib")
+        val ANALYTICS_START_DATE_ISO = stringPreferencesKey("analytics_start_date_iso")
+        val IGNORE_PRIOR_ANALYTICS_DAYS = booleanPreferencesKey("ignore_prior_analytics_days")
     }
 
     val runtimeStateFlow: Flow<AlarmLoopRuntimeState> = context.prayerAlarmDataStore.data.map { prefs ->
@@ -101,7 +131,18 @@ class PrayerAlarmDataStore(private val context: Context) {
             themeMode = prefs[Keys.THEME_MODE]?.takeIf { it.isNotBlank() } ?: "SYSTEM_AUTO",
             heroCardStyle = prefs[Keys.HERO_CARD_STYLE]?.takeIf { it.isNotBlank() } ?: "WAVE_CARD",
             displayScaleMode = prefs[Keys.DISPLAY_SCALE_MODE]?.takeIf { it.isNotBlank() } ?: "ADAPTIVE_CAPPED",
-            dismissedPrayerKey = prefs[Keys.DISMISSED_PRAYER_KEY]?.takeIf { it.isNotBlank() }
+            dismissedPrayerKey = prefs[Keys.DISMISSED_PRAYER_KEY]?.takeIf { it.isNotBlank() },
+            hasCompletedOnboarding = prefs[Keys.HAS_COMPLETED_ONBOARDING] ?: false,
+            calculationMethod = prefs[Keys.CALCULATION_METHOD]?.takeIf { it.isNotBlank() }
+                ?: CalculationMethod.MWL.name,
+            asrMadhab = prefs[Keys.ASR_MADHAB]?.takeIf { it.isNotBlank() }
+                ?: AsrMadhab.STANDARD.name,
+            manualFajrAngle = (prefs[Keys.MANUAL_FAJR_ANGLE] ?: 18.0).coerceIn(10.0, 24.0),
+            manualIshaUseFixedMinutes = prefs[Keys.MANUAL_ISHA_USE_FIXED_MINUTES] ?: false,
+            manualIshaAngle = (prefs[Keys.MANUAL_ISHA_ANGLE] ?: 17.0).coerceIn(10.0, 24.0),
+            manualIshaMinutesAfterMaghrib = (prefs[Keys.MANUAL_ISHA_MINUTES_AFTER_MAGHRIB] ?: 90).coerceIn(45, 150),
+            analyticsStartDateIso = prefs[Keys.ANALYTICS_START_DATE_ISO]?.takeIf { it.isNotBlank() },
+            ignorePriorAnalyticsDays = prefs[Keys.IGNORE_PRIOR_ANALYTICS_DAYS] ?: false
         )
     }
 
@@ -136,6 +177,46 @@ class PrayerAlarmDataStore(private val context: Context) {
             ),
             state.savedCityIsGps
         )
+    }
+
+    suspend fun setCalculationConfig(config: PrayerCalculationConfig) {
+        context.prayerAlarmDataStore.edit { prefs ->
+            prefs[Keys.CALCULATION_METHOD] = config.method.name
+            prefs[Keys.ASR_MADHAB] = config.asrMadhab.name
+            prefs[Keys.MANUAL_FAJR_ANGLE] = config.manualFajrAngle.coerceIn(10.0, 24.0)
+            prefs[Keys.MANUAL_ISHA_USE_FIXED_MINUTES] = config.manualIshaUseFixedMinutes
+            prefs[Keys.MANUAL_ISHA_ANGLE] = config.manualIshaAngle.coerceIn(10.0, 24.0)
+            prefs[Keys.MANUAL_ISHA_MINUTES_AFTER_MAGHRIB] = config.manualIshaMinutesAfterMaghrib.coerceIn(45, 150)
+        }
+    }
+
+    suspend fun completeOnboarding(
+        analyticsStartDateIso: String,
+        ignorePriorDays: Boolean
+    ) {
+        context.prayerAlarmDataStore.edit { prefs ->
+            prefs[Keys.HAS_COMPLETED_ONBOARDING] = true
+            prefs[Keys.ANALYTICS_START_DATE_ISO] = analyticsStartDateIso
+            prefs[Keys.IGNORE_PRIOR_ANALYTICS_DAYS] = ignorePriorDays
+        }
+    }
+
+    suspend fun setOnboardingCompleted(completed: Boolean) {
+        context.prayerAlarmDataStore.edit { prefs ->
+            prefs[Keys.HAS_COMPLETED_ONBOARDING] = completed
+        }
+    }
+
+    suspend fun setAnalyticsTrackingPreference(
+        startDateIso: String?,
+        ignorePriorDays: Boolean
+    ) {
+        context.prayerAlarmDataStore.edit { prefs ->
+            prefs[Keys.IGNORE_PRIOR_ANALYTICS_DAYS] = ignorePriorDays
+            if (startDateIso != null) {
+                prefs[Keys.ANALYTICS_START_DATE_ISO] = startDateIso
+            }
+        }
     }
 
     suspend fun setLastAthkaarDateIso(dateIso: String) {

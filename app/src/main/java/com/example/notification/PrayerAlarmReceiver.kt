@@ -82,7 +82,11 @@ class PrayerAlarmReceiver : BroadcastReceiver() {
                         val cityTz = com.example.domain.PrayerTimeCalculator.getTimeZoneForCity(city)
                         val nowCal = Calendar.getInstance(cityTz)
                         val nowMinutesOfDay = nowCal.get(Calendar.HOUR_OF_DAY) * 60 + nowCal.get(Calendar.MINUTE)
-                        val calc = com.example.domain.PrayerTimeCalculator.calculateDailyPrayers(city, nowCal)
+                        val calc = com.example.domain.PrayerTimeCalculator.calculateDailyPrayers(
+                            city,
+                            nowCal,
+                            runtimeState.toCalculationConfig()
+                        )
                         val isFriday = nowCal.get(Calendar.DAY_OF_WEEK) == Calendar.FRIDAY
                         val settingsKey = if (prayerId == "DHUHR" && isFriday) "JUMUAH" else prayerId
                         val setting = dao.getAllPrayerSettingsSync().firstOrNull { it.prayerId == settingsKey }

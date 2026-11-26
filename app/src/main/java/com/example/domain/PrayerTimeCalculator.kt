@@ -35,11 +35,202 @@ data class CalculatedPrayerTimes(
     val islamicMidnightMinutes: Int = 1408 // Continuous minutes from 00:00 (midpoint between Maghrib and Fajr)
 )
 
+enum class AsrMadhab(
+    val displayName: String,
+    val shortLabel: String,
+    val subtitle: String,
+    val shadowFactor: Double
+) {
+    STANDARD(
+        displayName = "Standard (Shafi'i, Maliki, Hanbali)",
+        shortLabel = "Standard",
+        subtitle = "Earlier Asr · 1× object shadow",
+        shadowFactor = 1.0
+    ),
+    HANAFI(
+        displayName = "Hanafi",
+        shortLabel = "Hanafi",
+        subtitle = "Later Asr · 2× object shadow",
+        shadowFactor = 2.0
+    );
+
+    companion object {
+        fun fromKey(raw: String?): AsrMadhab {
+            return entries.firstOrNull { it.name.equals(raw, ignoreCase = true) } ?: STANDARD
+        }
+    }
+}
+
+enum class CalculationMethod(
+    val shortCode: String,
+    val displayName: String,
+    val regionHint: String,
+    val fajrAngle: Double,
+    val ishaAngle: Double,
+    val ishaMinutesAfterMaghrib: Int? = null
+) {
+    MWL(
+        shortCode = "MWL",
+        displayName = "Muslim World League",
+        regionHint = "Europe, Far East, Global default",
+        fajrAngle = 18.0,
+        ishaAngle = 17.0
+    ),
+    KARACHI(
+        shortCode = "Karachi",
+        displayName = "Univ. of Islamic Sciences, Karachi",
+        regionHint = "India, Pakistan, Bangladesh, South Asia",
+        fajrAngle = 18.0,
+        ishaAngle = 18.0
+    ),
+    ISNA(
+        shortCode = "ISNA",
+        displayName = "Islamic Society of North America",
+        regionHint = "United States, Canada",
+        fajrAngle = 15.0,
+        ishaAngle = 15.0
+    ),
+    UMM_AL_QURA(
+        shortCode = "Makkah",
+        displayName = "Umm al-Qura University, Makkah",
+        regionHint = "Saudi Arabia, Arabian Peninsula",
+        fajrAngle = 18.5,
+        ishaAngle = 0.0,
+        ishaMinutesAfterMaghrib = 90
+    ),
+    EGYPT(
+        shortCode = "Egypt",
+        displayName = "Egyptian General Authority of Survey",
+        regionHint = "Egypt, Africa, Syria, Lebanon",
+        fajrAngle = 19.5,
+        ishaAngle = 17.5
+    ),
+    GULF_DUBAI(
+        shortCode = "Dubai",
+        displayName = "Dubai / Gulf Region",
+        regionHint = "UAE, Oman, Bahrain",
+        fajrAngle = 18.2,
+        ishaAngle = 18.2
+    ),
+    QATAR(
+        shortCode = "Qatar",
+        displayName = "Qatar",
+        regionHint = "Qatar (90m after Maghrib)",
+        fajrAngle = 18.0,
+        ishaAngle = 0.0,
+        ishaMinutesAfterMaghrib = 90
+    ),
+    KUWAIT(
+        shortCode = "Kuwait",
+        displayName = "Kuwait",
+        regionHint = "Kuwait",
+        fajrAngle = 18.0,
+        ishaAngle = 17.5
+    ),
+    TURKEY_DIYANET(
+        shortCode = "Diyanet",
+        displayName = "Turkey (Diyanet)",
+        regionHint = "Turkey, Balkans",
+        fajrAngle = 18.0,
+        ishaAngle = 17.0
+    ),
+    SINGAPORE_MUIS(
+        shortCode = "MUIS",
+        displayName = "Singapore (MUIS) / SE Asia",
+        regionHint = "Singapore, Malaysia, Indonesia, Brunei",
+        fajrAngle = 20.0,
+        ishaAngle = 18.0
+    ),
+    TEHRAN(
+        shortCode = "Tehran",
+        displayName = "Institute of Geophysics, Tehran",
+        regionHint = "Iran, Central Asia",
+        fajrAngle = 17.7,
+        ishaAngle = 14.0
+    ),
+    MOONSIGHTING(
+        shortCode = "Moonsighting",
+        displayName = "Moonsighting Committee Worldwide",
+        regionHint = "Global high-latitude friendly",
+        fajrAngle = 18.0,
+        ishaAngle = 18.0
+    ),
+    MANUAL(
+        shortCode = "Manual",
+        displayName = "Manual / Custom Angles",
+        regionHint = "Set your own Fajr & Isha degrees or minutes",
+        fajrAngle = 18.0,
+        ishaAngle = 17.0
+    );
+
+    val angleSpecLabel: String
+        get() {
+            val f = formatAngle(fajrAngle)
+            val i = ishaMinutesAfterMaghrib?.let { "${it}m" } ?: formatAngle(ishaAngle)
+            return "$f / $i"
+        }
+
+    companion object {
+        fun fromKey(raw: String?): CalculationMethod {
+            return entries.firstOrNull { it.name.equals(raw, ignoreCase = true) } ?: MWL
+        }
+
+        fun formatAngle(angle: Double): String {
+            val rounded = (angle * 10.0).roundToInt() / 10.0
+            return if (abs(rounded - rounded.toInt()) < 0.01) {
+                "${rounded.toInt()}°"
+            } else {
+                String.format(Locale.US, "%.1f°", rounded)
+            }
+        }
+    }
+}
+
+data class PrayerCalculationConfig(
+    val method: CalculationMethod = CalculationMethod.MWL,
+    val asrMadhab: AsrMadhab = AsrMadhab.STANDARD,
+    val manualFajrAngle: Double = 18.0,
+    val manualIshaUseFixedMinutes: Boolean = false,
+    val manualIshaAngle: Double = 17.0,
+    val manualIshaMinutesAfterMaghrib: Int = 90
+) {
+    val effectiveFajrAngle: Double
+        get() = if (method == CalculationMethod.MANUAL) {
+            manualFajrAngle.coerceIn(10.0, 24.0)
+        } else {
+            method.fajrAngle
+        }
+
+    val effectiveIshaFixedMinutes: Int?
+        get() = if (method == CalculationMethod.MANUAL) {
+            if (manualIshaUseFixedMinutes) manualIshaMinutesAfterMaghrib.coerceIn(45, 150) else null
+        } else {
+            method.ishaMinutesAfterMaghrib
+        }
+
+    val effectiveIshaAngle: Double
+        get() = if (method == CalculationMethod.MANUAL) {
+            manualIshaAngle.coerceIn(10.0, 24.0)
+        } else {
+            method.ishaAngle.coerceIn(10.0, 24.0)
+        }
+
+    val angleSpecLabel: String
+        get() {
+            val f = CalculationMethod.formatAngle(effectiveFajrAngle)
+            val i = effectiveIshaFixedMinutes?.let { "${it}m" }
+                ?: CalculationMethod.formatAngle(effectiveIshaAngle)
+            return "$f/$i"
+        }
+
+    val shortSummaryBadge: String
+        get() = "${method.shortCode} $angleSpecLabel · ${asrMadhab.shortLabel}"
+}
+
 /**
- * Astronomical Solar Prayer Time Calculator using the Muslim World League (MWL) convention:
- * - Fajr Angle: 18.0 degrees below horizon
- * - Isha Angle: 17.0 degrees below horizon
- * - Asr Shadow Factor: 1.0 (Standard / Shafi'i, Maliki, Hanbali)
+ * Astronomical Solar Prayer Time Calculator supporting global calculation conventions,
+ * custom manual Fajr/Isha twilight angles (or fixed minutes after Maghrib),
+ * and Standard (Shafi'i, Maliki, Hanbali — 1×) or Hanafi (2×) Asr juristic shadow factors.
  */
 object PrayerTimeCalculator {
 
@@ -258,7 +449,8 @@ object PrayerTimeCalculator {
 
     fun calculateDailyPrayers(
         city: CityLocation,
-        calendar: Calendar = getCalendarForCity(city)
+        calendar: Calendar = getCalendarForCity(city),
+        config: PrayerCalculationConfig = PrayerCalculationConfig()
     ): CalculatedPrayerTimes {
         val year = calendar.get(Calendar.YEAR)
         val month = calendar.get(Calendar.MONTH) + 1
@@ -269,29 +461,34 @@ object PrayerTimeCalculator {
 
         val dhuhrHours = 12.0 + city.timeZoneOffsetHours - (city.longitude / 15.0) - eqTime
 
-        // Muslim World League (MWL): Fajr = 18°, Isha = 17°, Sunrise/Sunset = 0.833°
         val sunriseAngle = 0.833
-        val fajrAngle = 18.0
-        val ishaAngle = 17.0
+        val fajrAngle = config.effectiveFajrAngle
+        val ishaFixedMinutes = config.effectiveIshaFixedMinutes
+        val ishaAngle = config.effectiveIshaAngle
+        val asrShadowFactor = config.asrMadhab.shadowFactor
 
         val fajrDiff = hourAngle(city.latitude, declination, fajrAngle)
         val sunriseDiff = hourAngle(city.latitude, declination, sunriseAngle)
-        val ishaDiff = hourAngle(city.latitude, declination, ishaAngle)
-        val asrDiff = asrHourAngle(city.latitude, declination, 1.0)
+        val asrDiff = asrHourAngle(city.latitude, declination, asrShadowFactor)
 
         val fajrH = normalizeHours(dhuhrHours - fajrDiff)
         val sunriseH = normalizeHours(dhuhrHours - sunriseDiff)
         val dhuhrH = normalizeHours(dhuhrHours + (2.0 / 60.0))
         val asrH = normalizeHours(dhuhrHours + asrDiff)
         val maghribH = normalizeHours(dhuhrHours + sunriseDiff + (2.0 / 60.0))
-        val ishaH = normalizeHours(dhuhrHours + ishaDiff)
 
         val fajrMin = (fajrH * 60.0).toInt().coerceIn(120, 480)
         val sunriseMin = (sunriseH * 60.0).toInt().coerceIn(210, 600).coerceAtLeast(fajrMin + 20)
         val dhuhrMin = (dhuhrH * 60.0).toInt().coerceIn(630, 870).coerceAtLeast(sunriseMin + 30)
         val asrMin = (asrH * 60.0).toInt().coerceIn(780, 1140).coerceAtLeast(dhuhrMin + 30)
         val maghribMin = (maghribH * 60.0).toInt().coerceIn(870, 1350).coerceAtLeast(asrMin + 20)
-        val ishaMin = (ishaH * 60.0).toInt().coerceIn(960, 1425).coerceAtLeast(maghribMin + 30)
+        val ishaMin = if (ishaFixedMinutes != null) {
+            (maghribMin + ishaFixedMinutes).coerceIn(960, 1425).coerceAtLeast(maghribMin + 30)
+        } else {
+            val ishaDiff = hourAngle(city.latitude, declination, ishaAngle)
+            val ishaH = normalizeHours(dhuhrHours + ishaDiff)
+            (ishaH * 60.0).toInt().coerceIn(960, 1425).coerceAtLeast(maghribMin + 30)
+        }
 
         // Islamic Midnight (Muntasaf al-Layl) = exact astronomical midpoint between this day's Maghrib (Sunset)
         // and the next morning's Fajr (never hardcoded to 12:00 AM)

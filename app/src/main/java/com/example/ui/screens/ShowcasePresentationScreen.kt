@@ -62,6 +62,7 @@ import com.example.data.AthkaarHabitUiModel
 import com.example.data.PrayerCompletionStatus
 import com.example.data.PrayerItemUiModel
 import com.example.domain.CityLocation
+import com.example.domain.PrayerCalculationConfig
 import com.example.ui.components.AppleFloatingGlassDock
 import com.example.ui.components.BottomSquircleAlertIsland
 import com.example.ui.components.BottomSquircleAlertState
@@ -111,7 +112,12 @@ fun NoorPrayerAppRoot(
     onUpdateThemeMode: (AppThemeMode) -> Unit = {},
     onCycleThemeMode: () -> Unit = {},
     onUpdateHeroCardStyle: (HeroCardStyle) -> Unit = {},
-    onUpdateDisplayScaleMode: (DisplayScaleMode) -> Unit = {}
+    onUpdateDisplayScaleMode: (DisplayScaleMode) -> Unit = {},
+    onUpdateCalculationConfig: (PrayerCalculationConfig) -> Unit = {},
+    onUpdateAnalyticsTrackingPreference: (Boolean, String?) -> Unit = { _, _ -> },
+    onReopenOnboarding: () -> Unit = {},
+    isDeviceLocationEnabled: () -> Boolean = { true },
+    onMarkPendingGpsAfterSettings: () -> Unit = {}
 ) {
     val haptics = LocalHapticFeedback.current
     val colors = NoorTheme.colors
@@ -222,7 +228,12 @@ fun NoorPrayerAppRoot(
                     onUpdateThemeMode = onUpdateThemeMode,
                     onCycleThemeMode = onCycleThemeMode,
                     onUpdateHeroCardStyle = onUpdateHeroCardStyle,
-                    onUpdateDisplayScaleMode = onUpdateDisplayScaleMode
+                    onUpdateDisplayScaleMode = onUpdateDisplayScaleMode,
+                    onUpdateCalculationConfig = onUpdateCalculationConfig,
+                    onUpdateAnalyticsTrackingPreference = onUpdateAnalyticsTrackingPreference,
+                    onReopenOnboarding = onReopenOnboarding,
+                    isDeviceLocationEnabled = isDeviceLocationEnabled,
+                    onMarkPendingGpsAfterSettings = onMarkPendingGpsAfterSettings
                 )
             } else {
                 // Critically damped Swiss horizontal glide between tabs
@@ -368,6 +379,11 @@ fun NoorPrayerAppRoot(
                                         onUpdateThemeMode = onUpdateThemeMode,
                                         onUpdateHeroCardStyle = onUpdateHeroCardStyle,
                                         onUpdateDisplayScaleMode = onUpdateDisplayScaleMode,
+                                        onUpdateCalculationConfig = onUpdateCalculationConfig,
+                                        onUpdateAnalyticsTrackingPreference = onUpdateAnalyticsTrackingPreference,
+                                        onReopenOnboarding = onReopenOnboarding,
+                                        isDeviceLocationEnabled = isDeviceLocationEnabled,
+                                        onMarkPendingGpsAfterSettings = onMarkPendingGpsAfterSettings,
                                         onBannerMessage = onBannerMessage
                                     )
                                 }
@@ -441,7 +457,12 @@ private fun ThreeScreenShowcaseDeck(
     onUpdateThemeMode: (AppThemeMode) -> Unit = {},
     onCycleThemeMode: () -> Unit = {},
     onUpdateHeroCardStyle: (HeroCardStyle) -> Unit = {},
-    onUpdateDisplayScaleMode: (DisplayScaleMode) -> Unit = {}
+    onUpdateDisplayScaleMode: (DisplayScaleMode) -> Unit = {},
+    onUpdateCalculationConfig: (PrayerCalculationConfig) -> Unit = {},
+    onUpdateAnalyticsTrackingPreference: (Boolean, String?) -> Unit = { _, _ -> },
+    onReopenOnboarding: () -> Unit = {},
+    isDeviceLocationEnabled: () -> Boolean = { true },
+    onMarkPendingGpsAfterSettings: () -> Unit = {}
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val isWidePresentation = maxWidth >= 860.dp
@@ -535,6 +556,11 @@ private fun ThreeScreenShowcaseDeck(
                         onUpdateThemeMode = onUpdateThemeMode,
                         onUpdateHeroCardStyle = onUpdateHeroCardStyle,
                         onUpdateDisplayScaleMode = onUpdateDisplayScaleMode,
+                        onUpdateCalculationConfig = onUpdateCalculationConfig,
+                        onUpdateAnalyticsTrackingPreference = onUpdateAnalyticsTrackingPreference,
+                        onReopenOnboarding = onReopenOnboarding,
+                        isDeviceLocationEnabled = isDeviceLocationEnabled,
+                        onMarkPendingGpsAfterSettings = onMarkPendingGpsAfterSettings,
                         onBannerMessage = onBannerMessage
                     )
                 }
@@ -653,6 +679,11 @@ private fun ThreeScreenShowcaseDeck(
                         onUpdateThemeMode = onUpdateThemeMode,
                         onUpdateHeroCardStyle = onUpdateHeroCardStyle,
                         onUpdateDisplayScaleMode = onUpdateDisplayScaleMode,
+                        onUpdateCalculationConfig = onUpdateCalculationConfig,
+                        onUpdateAnalyticsTrackingPreference = onUpdateAnalyticsTrackingPreference,
+                        onReopenOnboarding = onReopenOnboarding,
+                        isDeviceLocationEnabled = isDeviceLocationEnabled,
+                        onMarkPendingGpsAfterSettings = onMarkPendingGpsAfterSettings,
                         onBannerMessage = onBannerMessage
                     )
                 }

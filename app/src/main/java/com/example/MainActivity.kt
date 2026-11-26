@@ -10,10 +10,14 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -27,8 +31,10 @@ import com.example.domain.LocationResolutionManager
 import com.example.notification.ExactPrayerAlarmScheduler
 import com.example.notification.PrayerNotificationHelper
 import com.example.ui.screens.NoorPrayerAppRoot
+import com.example.ui.screens.OnboardingScreenContent
 import com.example.ui.theme.AppThemeMode
 import com.example.ui.theme.MyApplicationTheme
+import com.example.ui.theme.NoorTheme
 import com.example.viewmodel.PrayerHabitViewModel
 
 class MainActivity : ComponentActivity() {
@@ -117,57 +123,91 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                LaunchedEffect(Unit) {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        val hasPerm = ContextCompat.checkSelfPermission(
-                            this@MainActivity,
-                            Manifest.permission.POST_NOTIFICATIONS
-                        ) == PackageManager.PERMISSION_GRANTED
-                        if (!hasPerm) {
-                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                LaunchedEffect(uiState.isPreferencesLoaded, uiState.showOnboarding) {
+                    if (uiState.isPreferencesLoaded && !uiState.showOnboarding) {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            val hasPerm = ContextCompat.checkSelfPermission(
+                                this@MainActivity,
+                                Manifest.permission.POST_NOTIFICATIONS
+                            ) == PackageManager.PERMISSION_GRANTED
+                            if (!hasPerm) {
+                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            } else {
+                                viewModel.syncAndArmNotificationsNow()
+                            }
                         } else {
                             viewModel.syncAndArmNotificationsNow()
                         }
-                    } else {
-                        viewModel.syncAndArmNotificationsNow()
                     }
                 }
 
-                NoorPrayerAppRoot(
-                    uiState = uiState,
-                    onSetDisplayMode = viewModel::setDisplayMode,
-                    onSelectTab = viewModel::selectTab,
-                    onSelectCity = viewModel::selectCity,
-                    onSearchLocationQueryChanged = viewModel::updateLocationSearchQuery,
-                    onAddCustomLocation = viewModel::addAndSelectCustomLocation,
-                    onRequestGpsLocation = viewModel::requestGpsOrSqliteFallback,
-                    onMarkFeaturedAsPrayed = { viewModel.markFeaturedPrayerAsPrayed(null) },
-                    onSnoozeFeaturedFiveMin = viewModel::snoozeFeaturedPrayerFiveMinutes,
-                    onSimulateQadaRollover = viewModel::simulateNextPrayerAutoQadaRollover,
-                    onTogglePrayerCompleted = { prayer -> viewModel.togglePrayerCompletion(prayer, null) },
-                    onEditJamaahClicked = { prayer -> viewModel.openJamaahEditor(prayer, "JAMAAH") },
-                    onEditAdhanClicked = { prayer -> viewModel.openJamaahEditor(prayer, "ADHAN") },
-                    onSaveJamaahOffset = viewModel::saveJamaahOffset,
-                    onSavePrayerTimeSettings = viewModel::savePrayerTimeSettings,
-                    onDismissJamaahDialog = viewModel::dismissJamaahEditor,
-                    onStepAthkaar = viewModel::stepAthkaarCounter,
-                    onToggleAthkaarComplete = viewModel::toggleAthkaarCompletion,
-                    onBannerMessage = viewModel::showTransientBanner,
-                    onToggleCountdownMode = viewModel::toggleNextPrayerCountdownMode,
-                    onUpdateRepeatInterval = viewModel::updateNotificationRepeatInterval,
-                    onMarkFeaturedAsPrayedWithMode = viewModel::markFeaturedPrayerAsPrayed,
-                    onTogglePrayerCompletedWithMode = viewModel::togglePrayerCompletion,
-                    onSetPrayerJamaahStatus = viewModel::setPrayerJamaahStatus,
-                    onUpdateHijriOffset = viewModel::updateHijriDayOffset,
-                    onUpdateAutoJamaahWindow = viewModel::updateAutoJamaahWindowMinutes,
-                    onAdjustQazaBacklog = viewModel::adjustQazaBacklogCount,
-                    onUpdateHistoricalPrayer = viewModel::updateHistoricalPrayerRecord,
-                    onUpdateAutoSilenceDuringJamaah = viewModel::updateAutoSilenceDuringJamaah,
-                    onUpdateThemeMode = viewModel::updateThemeMode,
-                    onCycleThemeMode = viewModel::cycleThemeMode,
-                    onUpdateHeroCardStyle = viewModel::updateHeroCardStyle,
-                    onUpdateDisplayScaleMode = viewModel::updateDisplayScaleMode
-                )
+                when {
+                    !uiState.isPreferencesLoaded -> {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(NoorTheme.colors.canvas)
+                        )
+                    }
+
+                    uiState.showOnboarding -> {
+                        OnboardingScreenContent(
+                            uiState = uiState,
+                            onSelectCity = viewModel::selectCity,
+                            onSearchLocationQueryChanged = viewModel::updateLocationSearchQuery,
+                            onAddCustomLocation = viewModel::addAndSelectCustomLocation,
+                            onRequestGpsLocation = viewModel::requestGpsOrSqliteFallback,
+                            isDeviceLocationEnabled = viewModel::isDeviceLocationEnabled,
+                            onMarkPendingGpsAfterSettings = viewModel::markPendingGpsAfterLocationSettings,
+                            onUpdateCalculationConfig = viewModel::updateCalculationConfig,
+                            onCompleteOnboarding = viewModel::completeOnboarding,
+                            onBannerMessage = viewModel::showTransientBanner
+                        )
+                    }
+
+                    else -> {
+                        NoorPrayerAppRoot(
+                            uiState = uiState,
+                            onSetDisplayMode = viewModel::setDisplayMode,
+                            onSelectTab = viewModel::selectTab,
+                            onSelectCity = viewModel::selectCity,
+                            onSearchLocationQueryChanged = viewModel::updateLocationSearchQuery,
+                            onAddCustomLocation = viewModel::addAndSelectCustomLocation,
+                            onRequestGpsLocation = viewModel::requestGpsOrSqliteFallback,
+                            onMarkFeaturedAsPrayed = { viewModel.markFeaturedPrayerAsPrayed(null) },
+                            onSnoozeFeaturedFiveMin = viewModel::snoozeFeaturedPrayerFiveMinutes,
+                            onSimulateQadaRollover = viewModel::simulateNextPrayerAutoQadaRollover,
+                            onTogglePrayerCompleted = { prayer -> viewModel.togglePrayerCompletion(prayer, null) },
+                            onEditJamaahClicked = { prayer -> viewModel.openJamaahEditor(prayer, "JAMAAH") },
+                            onEditAdhanClicked = { prayer -> viewModel.openJamaahEditor(prayer, "ADHAN") },
+                            onSaveJamaahOffset = viewModel::saveJamaahOffset,
+                            onSavePrayerTimeSettings = viewModel::savePrayerTimeSettings,
+                            onDismissJamaahDialog = viewModel::dismissJamaahEditor,
+                            onStepAthkaar = viewModel::stepAthkaarCounter,
+                            onToggleAthkaarComplete = viewModel::toggleAthkaarCompletion,
+                            onBannerMessage = viewModel::showTransientBanner,
+                            onToggleCountdownMode = viewModel::toggleNextPrayerCountdownMode,
+                            onUpdateRepeatInterval = viewModel::updateNotificationRepeatInterval,
+                            onMarkFeaturedAsPrayedWithMode = viewModel::markFeaturedPrayerAsPrayed,
+                            onTogglePrayerCompletedWithMode = viewModel::togglePrayerCompletion,
+                            onSetPrayerJamaahStatus = viewModel::setPrayerJamaahStatus,
+                            onUpdateHijriOffset = viewModel::updateHijriDayOffset,
+                            onUpdateAutoJamaahWindow = viewModel::updateAutoJamaahWindowMinutes,
+                            onAdjustQazaBacklog = viewModel::adjustQazaBacklogCount,
+                            onUpdateHistoricalPrayer = viewModel::updateHistoricalPrayerRecord,
+                            onUpdateAutoSilenceDuringJamaah = viewModel::updateAutoSilenceDuringJamaah,
+                            onUpdateThemeMode = viewModel::updateThemeMode,
+                            onCycleThemeMode = viewModel::cycleThemeMode,
+                            onUpdateHeroCardStyle = viewModel::updateHeroCardStyle,
+                            onUpdateDisplayScaleMode = viewModel::updateDisplayScaleMode,
+                            onUpdateCalculationConfig = viewModel::updateCalculationConfig,
+                            onUpdateAnalyticsTrackingPreference = viewModel::updateAnalyticsTrackingPreference,
+                            onReopenOnboarding = viewModel::reopenOnboarding,
+                            isDeviceLocationEnabled = viewModel::isDeviceLocationEnabled,
+                            onMarkPendingGpsAfterSettings = viewModel::markPendingGpsAfterLocationSettings
+                        )
+                    }
+                }
             }
         }
     }
