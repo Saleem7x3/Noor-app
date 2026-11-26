@@ -58,7 +58,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
@@ -76,9 +78,12 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.PI
@@ -139,6 +144,48 @@ fun AppleHairlineDivider(
 }
 
 /**
+ * Zero-ellipsis single-line text that gracefully steps font size down within readable bounds
+ * whenever available width is constrained on compact phones or large system font scales.
+ */
+@Composable
+fun AutoSizeSingleLineText(
+    text: String,
+    style: TextStyle,
+    color: Color,
+    modifier: Modifier = Modifier,
+    maxFontSize: TextUnit = style.fontSize.takeIf { it != TextUnit.Unspecified } ?: 14.sp,
+    minFontSize: TextUnit = 8.5.sp,
+    fontWeight: FontWeight? = style.fontWeight,
+    textAlign: TextAlign? = null,
+    letterSpacing: TextUnit = style.letterSpacing
+) {
+    var currentFontSize by remember(text, maxFontSize) { mutableStateOf(maxFontSize) }
+
+    Text(
+        text = text,
+        style = style.copy(
+            fontSize = currentFontSize,
+            fontWeight = fontWeight,
+            letterSpacing = letterSpacing
+        ),
+        color = color,
+        textAlign = textAlign,
+        maxLines = 1,
+        softWrap = false,
+        overflow = TextOverflow.Clip,
+        onTextLayout = { result ->
+            if ((result.didOverflowWidth || result.hasVisualOverflow) && currentFontSize > minFontSize) {
+                val nextSize = (currentFontSize.value * 0.92f).coerceAtLeast(minFontSize.value).sp
+                if (nextSize != currentFontSize) {
+                    currentFontSize = nextSize
+                }
+            }
+        },
+        modifier = modifier
+    )
+}
+
+/**
  * Quiet uppercase Swiss editorial section header sitting directly on the canvas.
  */
 @Composable
@@ -156,29 +203,31 @@ fun SwissSectionLabel(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
+        AutoSizeSingleLineText(
             text = title.uppercase(),
             style = MaterialTheme.typography.labelSmall.copy(
                 fontFamily = IbmPlexMonoFontFamily,
                 fontSize = 10.5.sp,
-                letterSpacing = 1.1.sp,
+                letterSpacing = 1.0.sp,
                 fontWeight = FontWeight.Medium
             ),
+            maxFontSize = 10.5.sp,
+            minFontSize = 8.5.sp,
             color = colors.inkTertiary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+            modifier = Modifier.weight(1f, fill = false)
         )
         if (!trailingText.isNullOrBlank()) {
-            Text(
+            Spacer(modifier = Modifier.width(8.dp))
+            AutoSizeSingleLineText(
                 text = trailingText,
                 style = MaterialTheme.typography.labelSmall.withTabularDigits().copy(
                     fontFamily = IbmPlexMonoFontFamily,
                     fontSize = 10.5.sp,
                     letterSpacing = 0.2.sp
                 ),
-                color = trailingColor,
-                maxLines = 1,
-                softWrap = false
+                maxFontSize = 10.5.sp,
+                minFontSize = 8.5.sp,
+                color = trailingColor
             )
         }
     }
@@ -280,15 +329,15 @@ fun <T> AppleSegmentedControl(
                             .testTag("${optionTagPrefix}_$idx"),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(
+                        AutoSizeSingleLineText(
                             text = label,
                             style = MaterialTheme.typography.labelLarge,
-                            fontSize = 12.5.sp,
+                            maxFontSize = 12.5.sp,
+                            minFontSize = 9.5.sp,
                             color = textColor,
                             fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                            maxLines = 1,
-                            softWrap = false,
-                            overflow = TextOverflow.Ellipsis
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 4.dp)
                         )
                     }
                 }
@@ -457,16 +506,16 @@ fun AppleFloatingGlassDock(
                                 )
                             }
                             Spacer(modifier = Modifier.height(2.dp))
-                            Text(
+                            AutoSizeSingleLineText(
                                 text = spec.label,
                                 style = MaterialTheme.typography.labelLarge,
-                                fontSize = 10.sp,
+                                maxFontSize = 10.sp,
+                                minFontSize = 8.sp,
                                 color = contentTint,
                                 fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                                maxLines = 1,
-                                softWrap = false,
-                                overflow = TextOverflow.Ellipsis,
-                                letterSpacing = 0.sp
+                                letterSpacing = 0.sp,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(horizontal = 2.dp)
                             )
                             Spacer(modifier = Modifier.height(3.dp))
                         }
@@ -562,19 +611,19 @@ fun BottomSquircleAlertIsland(
             val dockWidth = maxWidth
             val targetWidth = when (state) {
                 is BottomSquircleAlertState.QazaPending -> {
-                    (dockWidth * 0.56f).coerceIn(186.dp, 240.dp)
+                    (dockWidth * 0.62f).coerceIn(208.dp, 268.dp)
                 }
                 is BottomSquircleAlertState.UndoUncheck -> {
-                    (dockWidth * 0.72f).coerceIn(224.dp, 316.dp)
+                    (dockWidth * 0.76f).coerceIn(232.dp, 326.dp)
                 }
                 is BottomSquircleAlertState.StatusNotice -> {
-                    if (state.message.length > 34) {
-                        (dockWidth * 0.86f).coerceIn(252.dp, 368.dp)
+                    if (state.message.length > 30) {
+                        (dockWidth * 0.90f).coerceIn(264.dp, 384.dp)
                     } else {
-                        (dockWidth * 0.68f).coerceIn(216.dp, 300.dp)
+                        (dockWidth * 0.72f).coerceIn(224.dp, 310.dp)
                     }
                 }
-                BottomSquircleAlertState.Hidden -> (dockWidth * 0.54f).coerceIn(180.dp, 232.dp)
+                BottomSquircleAlertState.Hidden -> (dockWidth * 0.56f).coerceIn(190.dp, 240.dp)
             }
 
             val animatedWidth by animateDpAsState(
@@ -638,13 +687,13 @@ fun BottomSquircleAlertIsland(
                                         tint = colors.accentGold,
                                         modifier = Modifier.size(15.dp)
                                     )
-                                    Text(
+                                    AutoSizeSingleLineText(
                                         text = "${activeState.prayerName} unmarked · ${activeState.secondsRemaining}s",
                                         style = MaterialTheme.typography.labelMedium.withTabularDigits(),
+                                        maxFontSize = 11.5.sp,
+                                        minFontSize = 9.sp,
                                         color = colors.inkPrimary,
-                                        fontWeight = FontWeight.Medium,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
+                                        fontWeight = FontWeight.Medium
                                     )
                                 }
 
@@ -695,10 +744,10 @@ fun BottomSquircleAlertIsland(
                                     text = activeState.message,
                                     style = MaterialTheme.typography.bodySmall,
                                     fontSize = 12.sp,
+                                    lineHeight = 16.sp,
                                     color = colors.inkPrimary,
                                     fontWeight = FontWeight.Medium,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis
+                                    maxLines = 3
                                 )
                             }
                         }
@@ -729,22 +778,20 @@ fun BottomSquircleAlertIsland(
                                             .background(colors.accentCoral)
                                     )
                                     Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
-                                        Text(
+                                        AutoSizeSingleLineText(
                                             text = "Qaza · ${activeState.totalCount}",
                                             style = MaterialTheme.typography.labelLarge.withTabularDigits(),
-                                            fontSize = 12.sp,
+                                            maxFontSize = 12.sp,
+                                            minFontSize = 9.5.sp,
                                             color = colors.accentCoral,
-                                            fontWeight = FontWeight.SemiBold,
-                                            maxLines = 1,
-                                            softWrap = false
+                                            fontWeight = FontWeight.SemiBold
                                         )
-                                        Text(
+                                        AutoSizeSingleLineText(
                                             text = subText,
                                             style = MaterialTheme.typography.labelSmall,
-                                            fontSize = 10.sp,
-                                            color = colors.inkSecondary,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
+                                            maxFontSize = 10.sp,
+                                            minFontSize = 8.sp,
+                                            color = colors.inkSecondary
                                         )
                                     }
                                 }

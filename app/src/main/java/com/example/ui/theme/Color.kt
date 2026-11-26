@@ -37,6 +37,21 @@ enum class HeroCardStyle(val shortLabel: String, val displayName: String) {
 }
 
 /**
+ * User-selectable display & font scaling mode persisted in DataStore:
+ * - ADAPTIVE_CAPPED: Respects system display density and caps extreme font scaling at 1.12x
+ * - FIXED_SCALE: Locks font scale to 1.0x and normalizes extreme system display zoom inside the app
+ */
+enum class DisplayScaleMode(val shortLabel: String, val displayName: String) {
+    ADAPTIVE_CAPPED("Adaptive", "Adaptive (Capped)"),
+    FIXED_SCALE("Fixed Scale", "Fixed App Scale");
+
+    companion object {
+        fun fromStoredName(raw: String?): DisplayScaleMode =
+            entries.firstOrNull { it.name == raw } ?: ADAPTIVE_CAPPED
+    }
+}
+
+/**
  * Editorial Swiss Minimal dual-theme palette (Warm Architectural White Light + True OLED Dark)
  * built for calm monochrome-first hierarchy (90%+ canvas & ink) with restrained Gold, Emerald,
  * and Vermilion functional accents.

@@ -91,11 +91,31 @@ class ExactPrayerAlarmScheduler(private val context: Context) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val isPrimaryAlarmClockMilestone = triggerType == AlarmTriggerType.STAGE_1_PST_START ||
+            triggerType == AlarmTriggerType.STAGE_2_ADHAN_COUNTDOWN ||
+            triggerType == AlarmTriggerType.STAGE_JAMAAH_START ||
+            triggerType == AlarmTriggerType.STAGE_4_URGENT_END_OF_WINDOW
+
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
                 alarmManager.setAndAllowWhileIdle(
                     AlarmManager.RTC_WAKEUP,
                     triggerAtEpochMillis,
+                    pendingIntent
+                )
+            } else if (isPrimaryAlarmClockMilestone) {
+                // setAlarmClock() is exempt from Android Doze & Samsung One UI Deep Sleep throttling
+                val showAppIntent = Intent(appContext, com.example.MainActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                }
+                val showAppPi = PendingIntent.getActivity(
+                    appContext,
+                    requestCode + 5000,
+                    showAppIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                alarmManager.setAlarmClock(
+                    AlarmManager.AlarmClockInfo(triggerAtEpochMillis, showAppPi),
                     pendingIntent
                 )
             } else {
@@ -209,6 +229,7 @@ class ExactPrayerAlarmScheduler(private val context: Context) {
         )
 
         val nowMs = System.currentTimeMillis()
+        val dismissedKey = alarmDataStore.runtimeStateFlow.first().dismissedPrayerKey
         var nextArmedSummary: String? = null
         var nextArmedEpochMs = 0L
 
@@ -254,10 +275,36 @@ class ExactPrayerAlarmScheduler(private val context: Context) {
                 continue
             }
 
+            val isDismissedForWindow = dismissedKey == "${sheetIso}_$id"
+
             val pstStr = PrayerTimeCalculator.formatMinutesTo12Hour(pstMin)
             val adhanStr = PrayerTimeCalculator.formatMinutesTo12Hour(adhanMin)
             val jamaahStr = PrayerTimeCalculator.formatMinutesTo12Hour(jamaahMin)
             val urgentBeforeEndEpochMs = windowEndEpochMs - (urgentThresholdMin * 60_000L)
+
+            if (isDismissedForWindow) {
+                // Respect user's explicit Dismiss: do not re-arm reminders or post active alerts for this prayer,
+                // only arm strict Qaza rollover at the end of the prayer window.
+                if (windowEndEpochMs > nowMs) {
+                    scheduleExactTrigger(
+                        prayerId = id,
+                        prayerName = name,
+                        dateIso = sheetIso,
+                        triggerType = AlarmTriggerType.STAGE_QAZA_ROLLOVER,
+                        triggerAtEpochMillis = windowEndEpochMs,
+                        pstTimeFormatted = pstStr,
+                        adhanTimeFormatted = adhanStr,
+                        jamaahTimeFormatted = jamaahStr,
+                        pstEpochMillis = pstEpochMs,
+                        adhanEpochMillis = adhanEpochMs,
+                        jamaahEpochMillis = jamaahEpochMs,
+                        windowEndEpochMillis = windowEndEpochMs,
+                        minutesUntilJamaah = 0,
+                        nagIteration = 0
+                    )
+                }
+                continue
+            }
 
             // If this prayer's window is currently active right now and the caller requested an immediate
             // notification sync (e.g., on app launch or right after granting POST_NOTIFICATIONS), post it now
@@ -301,7 +348,11 @@ class ExactPrayerAlarmScheduler(private val context: Context) {
                     progressPercent = pctNow,
                     prayerId = id,
                     dateIso = sheetIso,
-                    nagIteration = if (nowMs >= firstPostJamaahNagEpochMs) 1 else 0
+                    nagIteration = if (nowMs >= firstPostJamaahNagEpochMs) 1 else 0,
+                    pstEpochMillis = pstEpochMs,
+                    adhanEpochMillis = adhanEpochMs,
+                    jamaahEpochMillis = jamaahEpochMs,
+                    windowEndEpochMillis = windowEndEpochMs
                 )
             }
 

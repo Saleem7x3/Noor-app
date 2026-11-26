@@ -11,9 +11,13 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.data.AppDatabase
@@ -88,7 +92,23 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            MyApplicationTheme(darkTheme = resolvedDarkTheme) {
+            MyApplicationTheme(
+                darkTheme = resolvedDarkTheme,
+                displayScaleMode = uiState.displayScaleMode
+            ) {
+                val lifecycleOwner = LocalLifecycleOwner.current
+                DisposableEffect(lifecycleOwner) {
+                    val observer = LifecycleEventObserver { _, event ->
+                        if (event == Lifecycle.Event.ON_RESUME) {
+                            viewModel.refreshPermissionsAndResyncAlarms()
+                        }
+                    }
+                    lifecycleOwner.lifecycle.addObserver(observer)
+                    onDispose {
+                        lifecycleOwner.lifecycle.removeObserver(observer)
+                    }
+                }
+
                 val notificationPermissionLauncher = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.RequestPermission()
                 ) { granted ->
@@ -145,7 +165,8 @@ class MainActivity : ComponentActivity() {
                     onUpdateAutoSilenceDuringJamaah = viewModel::updateAutoSilenceDuringJamaah,
                     onUpdateThemeMode = viewModel::updateThemeMode,
                     onCycleThemeMode = viewModel::cycleThemeMode,
-                    onUpdateHeroCardStyle = viewModel::updateHeroCardStyle
+                    onUpdateHeroCardStyle = viewModel::updateHeroCardStyle,
+                    onUpdateDisplayScaleMode = viewModel::updateDisplayScaleMode
                 )
             }
         }

@@ -39,6 +39,10 @@ class PrayerNaggingForegroundService : Service() {
         val minutesRemaining = intent?.getIntExtra(ExactPrayerAlarmScheduler.EXTRA_MIN_REMAINING_UNTIL_END, 30) ?: 30
         val repeatIntervalMin = intent?.getIntExtra(ExactPrayerAlarmScheduler.EXTRA_NAG_INTERVAL_MIN, 15) ?: 15
         val nagIteration = intent?.getIntExtra(ExactPrayerAlarmScheduler.EXTRA_NAG_ITERATION, 1) ?: 1
+        val pstEpochMillis = intent?.getLongExtra(ExactPrayerAlarmScheduler.EXTRA_PST_EPOCH_MS, 0L) ?: 0L
+        val adhanEpochMillis = intent?.getLongExtra(ExactPrayerAlarmScheduler.EXTRA_ADHAN_EPOCH_MS, 0L) ?: 0L
+        val jamaahEpochMillis = intent?.getLongExtra(ExactPrayerAlarmScheduler.EXTRA_JAMAAH_EPOCH_MS, 0L) ?: 0L
+        val windowEndEpochMillis = intent?.getLongExtra(ExactPrayerAlarmScheduler.EXTRA_WINDOW_END_EPOCH_MS, 0L) ?: 0L
 
         PrayerNotificationHelper.ensureChannel(this)
         val notification = PrayerNotificationHelper.buildRichPrayerNotification(
@@ -56,7 +60,11 @@ class PrayerNaggingForegroundService : Service() {
             repeatIntervalMinutes = repeatIntervalMin,
             progressPercent = if (triggerType == AlarmTriggerType.STAGE_4_URGENT_END_OF_WINDOW) 92 else 75,
             nagIteration = nagIteration,
-            isOngoingForeground = true
+            isOngoingForeground = true,
+            pstEpochMillis = pstEpochMillis,
+            adhanEpochMillis = adhanEpochMillis,
+            jamaahEpochMillis = jamaahEpochMillis,
+            windowEndEpochMillis = windowEndEpochMillis
         )
 
         try {
@@ -89,7 +97,12 @@ class PrayerNaggingForegroundService : Service() {
             repeatIntervalMinutes = repeatIntervalMin,
             targetElapsedPct = targetPct,
             nagIteration = nagIteration,
-            runInitialFastSweep = false
+            runInitialFastSweep = false,
+            isOngoingForeground = true,
+            pstEpochMillis = pstEpochMillis,
+            adhanEpochMillis = adhanEpochMillis,
+            jamaahEpochMillis = jamaahEpochMillis,
+            windowEndEpochMillis = windowEndEpochMillis
         )
 
         return START_REDELIVER_INTENT
@@ -111,7 +124,11 @@ class PrayerNaggingForegroundService : Service() {
             minutesPassedSinceJamaah: Int,
             minutesRemainingUntilEnd: Int,
             repeatIntervalMinutes: Int,
-            nagIteration: Int
+            nagIteration: Int,
+            pstEpochMillis: Long = 0L,
+            adhanEpochMillis: Long = 0L,
+            jamaahEpochMillis: Long = 0L,
+            windowEndEpochMillis: Long = 0L
         ) {
             val serviceIntent = Intent(context, PrayerNaggingForegroundService::class.java).apply {
                 putExtra(ExactPrayerAlarmScheduler.EXTRA_PRAYER_ID, prayerId)
@@ -126,6 +143,10 @@ class PrayerNaggingForegroundService : Service() {
                 putExtra(ExactPrayerAlarmScheduler.EXTRA_MIN_REMAINING_UNTIL_END, minutesRemainingUntilEnd)
                 putExtra(ExactPrayerAlarmScheduler.EXTRA_NAG_INTERVAL_MIN, repeatIntervalMin(repeatIntervalMinutes))
                 putExtra(ExactPrayerAlarmScheduler.EXTRA_NAG_ITERATION, nagIteration)
+                putExtra(ExactPrayerAlarmScheduler.EXTRA_PST_EPOCH_MS, pstEpochMillis)
+                putExtra(ExactPrayerAlarmScheduler.EXTRA_ADHAN_EPOCH_MS, adhanEpochMillis)
+                putExtra(ExactPrayerAlarmScheduler.EXTRA_JAMAAH_EPOCH_MS, jamaahEpochMillis)
+                putExtra(ExactPrayerAlarmScheduler.EXTRA_WINDOW_END_EPOCH_MS, windowEndEpochMillis)
             }
             try {
                 ContextCompat.startForegroundService(context, serviceIntent)
@@ -145,7 +166,11 @@ class PrayerNaggingForegroundService : Service() {
                     repeatIntervalMinutes = repeatIntervalMin(repeatIntervalMinutes),
                     progressPercent = if (triggerType == AlarmTriggerType.STAGE_4_URGENT_END_OF_WINDOW) 92 else 75,
                     nagIteration = nagIteration,
-                    isOngoingForeground = false
+                    isOngoingForeground = false,
+                    pstEpochMillis = pstEpochMillis,
+                    adhanEpochMillis = adhanEpochMillis,
+                    jamaahEpochMillis = jamaahEpochMillis,
+                    windowEndEpochMillis = windowEndEpochMillis
                 )
                 PrayerNotificationHelper.postNotificationIfPermitted(context, notification)
             }

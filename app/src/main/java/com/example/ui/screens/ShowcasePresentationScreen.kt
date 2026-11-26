@@ -68,6 +68,7 @@ import com.example.ui.components.BottomSquircleAlertState
 import com.example.ui.components.SwissInsetGroup
 import com.example.ui.components.appleSpringClickable
 import com.example.ui.theme.AppThemeMode
+import com.example.ui.theme.DisplayScaleMode
 import com.example.ui.theme.HeroCardStyle
 import com.example.ui.theme.IbmPlexMonoFontFamily
 import com.example.ui.theme.NoorTheme
@@ -109,7 +110,8 @@ fun NoorPrayerAppRoot(
     onUpdateAutoSilenceDuringJamaah: (Boolean) -> Unit = {},
     onUpdateThemeMode: (AppThemeMode) -> Unit = {},
     onCycleThemeMode: () -> Unit = {},
-    onUpdateHeroCardStyle: (HeroCardStyle) -> Unit = {}
+    onUpdateHeroCardStyle: (HeroCardStyle) -> Unit = {},
+    onUpdateDisplayScaleMode: (DisplayScaleMode) -> Unit = {}
 ) {
     val haptics = LocalHapticFeedback.current
     val colors = NoorTheme.colors
@@ -219,7 +221,8 @@ fun NoorPrayerAppRoot(
                     onUpdateRepeatInterval = onUpdateRepeatInterval,
                     onUpdateThemeMode = onUpdateThemeMode,
                     onCycleThemeMode = onCycleThemeMode,
-                    onUpdateHeroCardStyle = onUpdateHeroCardStyle
+                    onUpdateHeroCardStyle = onUpdateHeroCardStyle,
+                    onUpdateDisplayScaleMode = onUpdateDisplayScaleMode
                 )
             } else {
                 // Critically damped Swiss horizontal glide between tabs
@@ -363,7 +366,9 @@ fun NoorPrayerAppRoot(
                                             onUpdateAutoSilenceDuringJamaah(enabled)
                                         },
                                         onUpdateThemeMode = onUpdateThemeMode,
-                                        onUpdateHeroCardStyle = onUpdateHeroCardStyle
+                                        onUpdateHeroCardStyle = onUpdateHeroCardStyle,
+                                        onUpdateDisplayScaleMode = onUpdateDisplayScaleMode,
+                                        onBannerMessage = onBannerMessage
                                     )
                                 }
                             }
@@ -435,7 +440,8 @@ private fun ThreeScreenShowcaseDeck(
     onUpdateRepeatInterval: (Int, Int, Int, Int) -> Unit = { _, _, _, _ -> },
     onUpdateThemeMode: (AppThemeMode) -> Unit = {},
     onCycleThemeMode: () -> Unit = {},
-    onUpdateHeroCardStyle: (HeroCardStyle) -> Unit = {}
+    onUpdateHeroCardStyle: (HeroCardStyle) -> Unit = {},
+    onUpdateDisplayScaleMode: (DisplayScaleMode) -> Unit = {}
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val isWidePresentation = maxWidth >= 860.dp
@@ -527,7 +533,9 @@ private fun ThreeScreenShowcaseDeck(
                         onMarkFeaturedAsPrayed = onMarkFeaturedAsPrayed,
                         onUpdateNotificationSettings = onUpdateRepeatInterval,
                         onUpdateThemeMode = onUpdateThemeMode,
-                        onUpdateHeroCardStyle = onUpdateHeroCardStyle
+                        onUpdateHeroCardStyle = onUpdateHeroCardStyle,
+                        onUpdateDisplayScaleMode = onUpdateDisplayScaleMode,
+                        onBannerMessage = onBannerMessage
                     )
                 }
             }
@@ -643,7 +651,9 @@ private fun ThreeScreenShowcaseDeck(
                         onMarkFeaturedAsPrayed = onMarkFeaturedAsPrayed,
                         onUpdateNotificationSettings = onUpdateRepeatInterval,
                         onUpdateThemeMode = onUpdateThemeMode,
-                        onUpdateHeroCardStyle = onUpdateHeroCardStyle
+                        onUpdateHeroCardStyle = onUpdateHeroCardStyle,
+                        onUpdateDisplayScaleMode = onUpdateDisplayScaleMode,
+                        onBannerMessage = onBannerMessage
                     )
                 }
 

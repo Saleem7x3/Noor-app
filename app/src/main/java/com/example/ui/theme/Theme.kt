@@ -12,6 +12,10 @@ import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 
 val LocalNoorColors = staticCompositionLocalOf<NoorThemePalette> {
     AppleOledDarkPalette
@@ -42,9 +46,33 @@ private fun animateThemeColor(target: Color, label: String): Color {
 @Composable
 fun MyApplicationTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
+    displayScaleMode: DisplayScaleMode = DisplayScaleMode.ADAPTIVE_CAPPED,
     content: @Composable () -> Unit
 ) {
     val target = if (darkTheme) AppleOledDarkPalette else AppleWhiteLightPalette
+    val baseDensity = LocalDensity.current
+    val configuration = LocalConfiguration.current
+    val context = LocalContext.current
+
+    val effectiveDensity = when (displayScaleMode) {
+        DisplayScaleMode.ADAPTIVE_CAPPED -> Density(
+            density = baseDensity.density,
+            fontScale = baseDensity.fontScale.coerceIn(0.85f, 1.12f)
+        )
+        DisplayScaleMode.FIXED_SCALE -> {
+            val widthPx = context.resources.displayMetrics.widthPixels
+            val baselineWidthDp = 392f
+            val normalizedDensity = if (widthPx > 0 && configuration.screenWidthDp in 240..385) {
+                (widthPx / baselineWidthDp).coerceIn(1.5f, baseDensity.density)
+            } else {
+                baseDensity.density
+            }
+            Density(
+                density = normalizedDensity,
+                fontScale = 1.0f
+            )
+        }
+    }
 
     val animatedPalette = NoorThemePalette(
         isDark = darkTheme,
@@ -117,7 +145,10 @@ fun MyApplicationTheme(
         )
     }
 
-    CompositionLocalProvider(LocalNoorColors provides animatedPalette) {
+    CompositionLocalProvider(
+        LocalNoorColors provides animatedPalette,
+        LocalDensity provides effectiveDensity
+    ) {
         MaterialTheme(
             colorScheme = colorScheme,
             typography = Typography,

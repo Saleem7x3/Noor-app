@@ -50,7 +50,6 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
@@ -59,12 +58,13 @@ import com.example.data.DayContributionCell
 import com.example.data.HistoricalDayPrayerUiModel
 import com.example.data.PrayerCompletionStatus
 import com.example.ui.components.AppleHairlineDivider
+import com.example.ui.components.AutoSizeSingleLineText
 import com.example.ui.components.SwissInsetGroup
 import com.example.ui.components.SwissSectionLabel
-import com.example.ui.theme.AmiriFontFamily
 import com.example.ui.theme.IbmPlexMonoFontFamily
 import com.example.ui.theme.NoorTheme
 import com.example.ui.theme.NoorThemePalette
+import com.example.ui.theme.arabicCalligraphyStyle
 import com.example.ui.theme.asMonoPrecision
 import com.example.ui.theme.withTabularDigits
 import com.example.viewmodel.PrayerDashboardUiState
@@ -286,25 +286,23 @@ private fun EditorialKpiColumn(
         horizontalAlignment = Alignment.Start,
         verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
-        Text(
+        AutoSizeSingleLineText(
             text = value,
             style = MaterialTheme.typography.headlineMedium.withTabularDigits(),
-            fontSize = 22.sp,
+            maxFontSize = 22.sp,
+            minFontSize = 15.sp,
             color = accentColor,
-            fontWeight = FontWeight.Medium,
-            maxLines = 1,
-            softWrap = false
+            fontWeight = FontWeight.Medium
         )
-        Text(
+        AutoSizeSingleLineText(
             text = label,
             style = MaterialTheme.typography.labelSmall.copy(
                 fontFamily = IbmPlexMonoFontFamily,
-                fontSize = 9.5.sp,
-                letterSpacing = 0.8.sp
+                letterSpacing = 0.7.sp
             ),
-            color = colors.inkTertiary,
-            maxLines = 1,
-            softWrap = false
+            maxFontSize = 9.5.sp,
+            minFontSize = 7.5.sp,
+            color = colors.inkTertiary
         )
     }
 }
@@ -364,8 +362,7 @@ private fun QazaBacklogInsetGroup(
                     text = subtitleText,
                     style = MaterialTheme.typography.bodySmall,
                     color = if (hasPending) colors.accentCoral else colors.inkSecondary,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
+                    maxLines = 3
                 )
             }
 
@@ -411,10 +408,12 @@ private fun QazaBacklogInsetGroup(
                     modifier = Modifier.size(15.dp)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
-                Text(
+                AutoSizeSingleLineText(
                     text = "Prayed 1 Qaza",
                     style = MaterialTheme.typography.labelLarge,
-                    fontSize = 12.5.sp
+                    maxFontSize = 12.5.sp,
+                    minFontSize = 10.sp,
+                    color = if (totalQazaBacklogCount > 0) colors.surfaceCard else colors.inkTertiary
                 )
             }
 
@@ -422,7 +421,7 @@ private fun QazaBacklogInsetGroup(
                 onClick = { onAdjustQazaBacklog(1) },
                 shape = RoundedCornerShape(10.dp),
                 border = BorderStroke(0.5.dp, colors.hairlineStrong),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 9.dp),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 9.dp),
                 modifier = Modifier
                     .weight(1f)
                     .height(40.dp)
@@ -435,10 +434,11 @@ private fun QazaBacklogInsetGroup(
                     modifier = Modifier.size(14.dp)
                 )
                 Spacer(modifier = Modifier.width(4.dp))
-                Text(
+                AutoSizeSingleLineText(
                     text = "Add 1",
                     style = MaterialTheme.typography.labelLarge,
-                    fontSize = 12.5.sp,
+                    maxFontSize = 12.5.sp,
+                    minFontSize = 10.sp,
                     color = colors.inkPrimary
                 )
             }
@@ -526,10 +526,8 @@ private fun HistoricalDayEditorSheetContent(
                             )
                             Text(
                                 text = item.nameArabic,
-                                style = MaterialTheme.typography.bodyMedium.copy(fontFamily = AmiriFontFamily),
-                                fontSize = 15.sp,
-                                color = if (isLockedUpcoming) colors.inkTertiary else colors.accentGold,
-                                fontWeight = FontWeight.Bold
+                                style = arabicCalligraphyStyle(fontSize = 15.sp, fontWeight = FontWeight.Bold),
+                                color = if (isLockedUpcoming) colors.inkTertiary else colors.accentGold
                             )
                         }
 
@@ -648,13 +646,13 @@ private fun HistoricalStatusOption(
             .padding(vertical = 6.dp, horizontal = 4.dp),
         contentAlignment = Alignment.Center
     ) {
-        Text(
+        AutoSizeSingleLineText(
             text = label,
             style = MaterialTheme.typography.labelLarge,
-            fontSize = 11.sp,
+            maxFontSize = 11.sp,
+            minFontSize = 8.5.sp,
             color = if (selected) activeColor else colors.inkSecondary,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-            maxLines = 1
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
         )
     }
 }
@@ -792,9 +790,7 @@ private fun SwissAthkaarRowItem(
                     )
                     Text(
                         text = habit.arabicSubtitle,
-                        style = MaterialTheme.typography.bodyMedium.copy(fontFamily = AmiriFontFamily),
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
+                        style = arabicCalligraphyStyle(fontSize = 15.sp, fontWeight = FontWeight.Bold),
                         color = colors.accentGold
                     )
                 }
@@ -815,8 +811,7 @@ private fun SwissAthkaarRowItem(
                         text = habit.description,
                         style = MaterialTheme.typography.bodySmall,
                         color = colors.inkSecondary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        maxLines = 3
                     )
                 }
             }

@@ -36,10 +36,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Mosque
+import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -68,7 +70,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -77,11 +79,13 @@ import com.example.domain.PrayerTimeCalculator
 import com.example.notification.AlarmTriggerType
 import com.example.notification.PrayerNotificationHelper
 import com.example.ui.components.AppleHairlineDivider
+import com.example.ui.components.AutoSizeSingleLineText
 import com.example.ui.components.SwissInsetGroup
 import com.example.ui.components.appleSpringClickable
 import com.example.ui.theme.AmiriFontFamily
 import com.example.ui.theme.IbmPlexMonoFontFamily
 import com.example.ui.theme.NoorTheme
+import com.example.ui.theme.arabicCalligraphyStyle
 import com.example.ui.theme.asMonoPrecision
 import com.example.ui.theme.withTabularDigits
 import com.example.viewmodel.PrayerDashboardUiState
@@ -114,6 +118,7 @@ fun NotificationLockScreenContent(
     val pstTime = featuredPrayer?.let { PrayerTimeCalculator.formatMinutesTo12Hour(it.pstMinutes) } ?: "03:39 PM"
     val adhanTime = featuredPrayer?.let { PrayerTimeCalculator.formatMinutesTo12Hour(it.adhanMinutes) } ?: "04:30 PM"
     val jamaahTime = featuredPrayer?.let { PrayerTimeCalculator.formatMinutesTo12Hour(it.jamaahMinutes) } ?: "04:45 PM"
+    val endTime = featuredPrayer?.let { PrayerTimeCalculator.formatMinutesTo12Hour(it.displayEndMinutes) } ?: "05:18 PM"
     val canMarkPrayedNow = (uiState.isFeaturedPrayerActiveWindow && featuredPrayer?.canMarkPrayed == true) ||
         uiState.isIshaMissedAfterMidnight
 
@@ -182,10 +187,22 @@ fun NotificationLockScreenContent(
         }
     }
 
+    var pendingTestNotificationRequest by remember { mutableStateOf(false) }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (granted && uiState.isFeaturedPrayerActiveWindow) {
+        val wasTestRequest = pendingTestNotificationRequest
+        pendingTestNotificationRequest = false
+        if (granted && wasTestRequest) {
+            PrayerNotificationHelper.showTestNotification(
+                context = context,
+                nextPrayerName = prayerName,
+                nextPrayerTimeFormatted = pstTime,
+                canScheduleExactAlarms = uiState.canScheduleExactAlarms
+            )
+            onNotificationTriggered("Test notification sent ✓")
+        } else if (granted && uiState.isFeaturedPrayerActiveWindow) {
             PrayerNotificationHelper.showDynamicPrayerNotification(
                 context = context,
                 prayerName = prayerName,
@@ -204,7 +221,25 @@ fun NotificationLockScreenContent(
         } else if (granted) {
             onNotificationTriggered("$prayerName starts at $pstTime (${uiState.heroCountdownSubtitleText})")
         } else {
-            onNotificationTriggered("Notification permission denied; preview active on screen")
+            onNotificationTriggered("Notification permission denied — allow in Android Settings")
+        }
+    }
+
+    val sendRealTestNotification = {
+        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        val sent = PrayerNotificationHelper.showTestNotification(
+            context = context,
+            nextPrayerName = prayerName,
+            nextPrayerTimeFormatted = pstTime,
+            canScheduleExactAlarms = uiState.canScheduleExactAlarms
+        )
+        if (!sent && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            pendingTestNotificationRequest = true
+            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else if (sent) {
+            onNotificationTriggered("Test notification sent ✓")
+        } else {
+            onNotificationTriggered("Notifications are disabled for this app in system settings")
         }
     }
 
@@ -231,6 +266,7 @@ fun NotificationLockScreenContent(
                 triggerType = activeStage
             )
             if (!sent) {
+                pendingTestNotificationRequest = false
                 permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             } else {
                 onNotificationTriggered("System notification posted for $prayerName")
@@ -433,7 +469,8 @@ fun NotificationLockScreenContent(
                                     fontFamily = AmiriFontFamily,
                                     fontWeight = FontWeight.Bold,
                                     color = colors.accentGold,
-                                    fontSize = 14.5.sp
+                                    fontSize = 14.5.sp,
+                                    letterSpacing = 0.sp
                                 )
                             ) {
                                 append(arabicDayPart)
@@ -443,8 +480,9 @@ fun NotificationLockScreenContent(
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = colors.inkSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    modifier = Modifier.padding(horizontal = 8.dp)
                 )
             }
 
@@ -459,7 +497,7 @@ fun NotificationLockScreenContent(
                         .padding(if (isTightDisplay) 16.dp else 20.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    // Header: Quiet Status Dot + Mono Eyebrow (Left) + Borderless Tappable Jama'ah (Right)
+                    // Header: Quiet Status Dot + Auto-fit Mono Eyebrow (Left) + Borderless Tappable Jama'ah (Right)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -468,7 +506,7 @@ fun NotificationLockScreenContent(
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(7.dp),
-                            modifier = Modifier.weight(1f, fill = false)
+                            modifier = Modifier.weight(1f)
                         ) {
                             Box(
                                 modifier = Modifier
@@ -476,30 +514,23 @@ fun NotificationLockScreenContent(
                                     .clip(CircleShape)
                                     .background(if (isUrgentVisual) colors.accentCoral else colors.accentGold)
                             )
-                            Text(
+                            AutoSizeSingleLineText(
                                 text = uiState.heroHeaderStatusLabel.uppercase(),
                                 style = MaterialTheme.typography.labelSmall.copy(
                                     fontFamily = IbmPlexMonoFontFamily,
-                                    letterSpacing = 0.9.sp
+                                    letterSpacing = 0.7.sp
                                 ),
-                                fontSize = 10.sp,
-                                color = if (isUrgentVisual) colors.accentCoral else colors.inkSecondary,
-                                maxLines = 1,
-                                softWrap = false,
-                                overflow = TextOverflow.Ellipsis
+                                maxFontSize = 10.sp,
+                                minFontSize = 8.sp,
+                                color = if (isUrgentVisual) colors.accentCoral else colors.inkSecondary
                             )
                         }
 
                         Spacer(modifier = Modifier.width(8.dp))
 
-                        Text(
-                            text = "${uiState.heroJamaahPillText} ✎",
-                            style = MaterialTheme.typography.labelSmall.asMonoPrecision(),
-                            fontSize = 10.5.sp,
-                            color = colors.accentGold,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            softWrap = false,
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
                             modifier = Modifier
                                 .clip(RoundedCornerShape(6.dp))
                                 .clickable {
@@ -508,11 +539,26 @@ fun NotificationLockScreenContent(
                                 }
                                 .padding(horizontal = 6.dp, vertical = 3.dp)
                                 .testTag("minutes_until_jamaah_badge")
-                        )
+                        ) {
+                            AutoSizeSingleLineText(
+                                text = uiState.heroJamaahPillText,
+                                style = MaterialTheme.typography.labelSmall.asMonoPrecision(),
+                                maxFontSize = 10.5.sp,
+                                minFontSize = 8.5.sp,
+                                color = colors.accentGold,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Icon(
+                                imageVector = Icons.Rounded.Edit,
+                                contentDescription = "Edit Jama'ah time",
+                                tint = colors.accentGold,
+                                modifier = Modifier.size(11.dp)
+                            )
+                        }
                     }
 
-                    // Prayer Title + Schedule Line
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    // Prayer Title + Zero-Ellipsis 3-Column Horological Schedule Strip
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Row(
                             verticalAlignment = Alignment.Bottom,
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -528,25 +574,96 @@ fun NotificationLockScreenContent(
                             )
                             Text(
                                 text = prayerArabic,
-                                fontFamily = AmiriFontFamily,
-                                fontSize = if (isTightDisplay) 20.sp else 23.sp,
+                                style = arabicCalligraphyStyle(
+                                    fontSize = if (isTightDisplay) 20.sp else 23.sp,
+                                    fontWeight = FontWeight.Bold
+                                ),
                                 color = colors.accentGold,
-                                fontWeight = FontWeight.Bold,
                                 maxLines = 1,
                                 softWrap = false,
-                                modifier = Modifier.padding(bottom = 2.dp)
+                                modifier = Modifier.padding(bottom = 1.dp)
                             )
                         }
 
-                        Text(
-                            text = uiState.lockScreenStageTimeText,
-                            style = MaterialTheme.typography.labelSmall.asMonoPrecision(),
-                            fontSize = 11.sp,
-                            color = colors.inkSecondary,
-                            maxLines = 1,
-                            softWrap = false,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(1.dp)
+                            ) {
+                                AutoSizeSingleLineText(
+                                    text = "STARTS",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontFamily = IbmPlexMonoFontFamily,
+                                        letterSpacing = 0.6.sp
+                                    ),
+                                    maxFontSize = 9.sp,
+                                    minFontSize = 7.5.sp,
+                                    color = colors.inkTertiary
+                                )
+                                AutoSizeSingleLineText(
+                                    text = pstTime,
+                                    style = MaterialTheme.typography.labelMedium.asMonoPrecision(),
+                                    maxFontSize = 11.5.sp,
+                                    minFontSize = 9.sp,
+                                    color = colors.inkSecondary,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(1.dp)
+                            ) {
+                                AutoSizeSingleLineText(
+                                    text = "ADHAN",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontFamily = IbmPlexMonoFontFamily,
+                                        letterSpacing = 0.6.sp
+                                    ),
+                                    maxFontSize = 9.sp,
+                                    minFontSize = 7.5.sp,
+                                    color = colors.inkTertiary
+                                )
+                                AutoSizeSingleLineText(
+                                    text = adhanTime,
+                                    style = MaterialTheme.typography.labelMedium.asMonoPrecision(),
+                                    maxFontSize = 11.5.sp,
+                                    minFontSize = 9.sp,
+                                    color = colors.inkPrimary,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                horizontalAlignment = Alignment.End,
+                                verticalArrangement = Arrangement.spacedBy(1.dp)
+                            ) {
+                                AutoSizeSingleLineText(
+                                    text = "ENDS",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontFamily = IbmPlexMonoFontFamily,
+                                        letterSpacing = 0.6.sp
+                                    ),
+                                    maxFontSize = 9.sp,
+                                    minFontSize = 7.5.sp,
+                                    color = colors.inkTertiary
+                                )
+                                AutoSizeSingleLineText(
+                                    text = endTime,
+                                    style = MaterialTheme.typography.labelMedium.asMonoPrecision(),
+                                    maxFontSize = 11.5.sp,
+                                    minFontSize = 9.sp,
+                                    color = colors.inkSecondary,
+                                    fontWeight = FontWeight.Normal
+                                )
+                            }
+                        }
                     }
 
                     // Swiss 2dp Checkpoint Timeline
@@ -594,15 +711,13 @@ fun NotificationLockScreenContent(
                                     } else {
                                         currentBlinkText
                                     }
-                                    Text(
+                                    AutoSizeSingleLineText(
                                         text = phrase,
                                         style = MaterialTheme.typography.labelLarge.withTabularDigits(),
-                                        fontSize = if (isTightDisplay) 12.sp else 13.sp,
+                                        maxFontSize = if (isTightDisplay) 12.sp else 13.sp,
+                                        minFontSize = 9.5.sp,
                                         color = if (uiState.isUrgentEndOfWindow) colors.accentCoral else colors.inkPrimary,
                                         fontWeight = FontWeight.Medium,
-                                        maxLines = 1,
-                                        softWrap = false,
-                                        overflow = TextOverflow.Ellipsis,
                                         modifier = Modifier.testTag("lock_screen_countdown_above_bar")
                                     )
                                 }
@@ -773,14 +888,17 @@ fun NotificationLockScreenContent(
                                 canMarkPrayedNow -> "Mark $prayerName Prayed"
                                 else -> "Unlocks at $pstTime"
                             }
-                            Text(
+                            AutoSizeSingleLineText(
                                 text = buttonLabel,
                                 style = MaterialTheme.typography.labelLarge.withTabularDigits(),
-                                fontSize = if (isTightDisplay) 12.sp else 13.sp,
-                                fontWeight = FontWeight.Medium,
-                                maxLines = 1,
-                                softWrap = false,
-                                overflow = TextOverflow.Ellipsis
+                                maxFontSize = if (isTightDisplay) 12.sp else 13.sp,
+                                minFontSize = 9.5.sp,
+                                color = when {
+                                    isUrgentVisual -> Color.White
+                                    canMarkPrayedNow -> colors.surfaceCard
+                                    else -> colors.inkTertiary
+                                },
+                                fontWeight = FontWeight.Medium
                             )
                         }
 
@@ -854,7 +972,7 @@ fun NotificationLockScreenContent(
                 }
             }
 
-            // 3. Quiet Borderless System Alert Trigger directly on canvas
+            // 3. Quiet Borderless System Alert Status + Real Test Notification Trigger
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -863,12 +981,7 @@ fun NotificationLockScreenContent(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
                         .appleSpringClickable(shape = RoundedCornerShape(8.dp)) {
-                            if (isAlertPillExpanded) {
-                                isAlertPillExpanded = false
-                            } else {
-                                triggerNotificationAction()
-                                isAlertPillExpanded = true
-                            }
+                            isAlertPillExpanded = !isAlertPillExpanded
                         }
                         .padding(horizontal = 12.dp, vertical = 6.dp)
                         .testTag("trigger_system_notification_button"),
@@ -881,16 +994,16 @@ fun NotificationLockScreenContent(
                             .clip(CircleShape)
                             .background(if (uiState.isFeaturedPrayerActiveWindow) colors.accentGold else colors.inkTertiary)
                     )
-                    Text(
+                    AutoSizeSingleLineText(
                         text = if (uiState.isFeaturedPrayerActiveWindow) {
                             "Alert Active · $prayerName $adhanTime"
                         } else {
                             "Alert Armed · $prayerName $pstTime"
                         },
                         style = MaterialTheme.typography.labelSmall.asMonoPrecision(),
-                        color = colors.inkSecondary,
-                        maxLines = 1,
-                        softWrap = false
+                        maxFontSize = 10.5.sp,
+                        minFontSize = 8.5.sp,
+                        color = colors.inkSecondary
                     )
                     Icon(
                         imageVector = if (isAlertPillExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
@@ -905,23 +1018,54 @@ fun NotificationLockScreenContent(
                     enter = expandVertically() + fadeIn(),
                     exit = shrinkVertically() + fadeOut()
                 ) {
-                    OutlinedButton(
-                        onClick = triggerNotificationAction,
-                        shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(0.5.dp, colors.hairlineStrong),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.inkPrimary),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                        modifier = Modifier.height(36.dp)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = if (uiState.isFeaturedPrayerActiveWindow) {
-                                "Send Live System Notification"
-                            } else {
-                                "Preview Upcoming Alert"
-                            },
-                            style = MaterialTheme.typography.labelLarge,
-                            fontSize = 12.sp
-                        )
+                        OutlinedButton(
+                            onClick = sendRealTestNotification,
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(0.5.dp, colors.hairlineStrong),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.inkPrimary),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            modifier = Modifier
+                                .height(36.dp)
+                                .testTag("send_test_notification_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.NotificationsActive,
+                                contentDescription = null,
+                                tint = colors.accentGold,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            AutoSizeSingleLineText(
+                                text = "Send Test Notification",
+                                style = MaterialTheme.typography.labelLarge,
+                                maxFontSize = 12.sp,
+                                minFontSize = 9.5.sp,
+                                color = colors.inkPrimary
+                            )
+                        }
+
+                        if (uiState.isFeaturedPrayerActiveWindow) {
+                            OutlinedButton(
+                                onClick = triggerNotificationAction,
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(0.5.dp, colors.accentGold.copy(alpha = 0.5f)),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.accentGold),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                modifier = Modifier.height(36.dp)
+                            ) {
+                                AutoSizeSingleLineText(
+                                    text = "Post Live Alert",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    maxFontSize = 12.sp,
+                                    minFontSize = 9.5.sp,
+                                    color = colors.accentGold
+                                )
+                            }
+                        }
                     }
                 }
             }

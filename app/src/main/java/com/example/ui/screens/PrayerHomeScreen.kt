@@ -33,6 +33,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.BrightnessAuto
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.DarkMode
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.GpsFixed
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
@@ -73,15 +74,16 @@ import com.example.data.SolarWarningItemUiModel
 import com.example.domain.CityLocation
 import com.example.domain.PrayerTimeCalculator
 import com.example.ui.components.AppleHairlineDivider
+import com.example.ui.components.AutoSizeSingleLineText
 import com.example.ui.components.HeroWaveBackdropCanvas
 import com.example.ui.components.SwissInsetGroup
 import com.example.ui.components.SwissSectionLabel
 import com.example.ui.components.appleSpringClickable
-import com.example.ui.theme.AmiriFontFamily
 import com.example.ui.theme.AppThemeMode
 import com.example.ui.theme.HeroCardStyle
 import com.example.ui.theme.IbmPlexMonoFontFamily
 import com.example.ui.theme.NoorTheme
+import com.example.ui.theme.arabicCalligraphyStyle
 import com.example.ui.theme.asMonoPrecision
 import com.example.ui.theme.withTabularDigits
 import com.example.viewmodel.PrayerDashboardUiState
@@ -164,7 +166,7 @@ fun PrayerHomeScreenContent(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(if (isTightDisplay) 16.dp else 22.dp)
         ) {
-            // 1. Borderless Editorial Top Bar (directly on canvas, zero pill boxes)
+            // 1. Borderless Editorial Top Bar (compact auto-fit single row, zero ellipsis)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -175,43 +177,55 @@ fun PrayerHomeScreenContent(
                 val badgeParts = uiState.dayAndDateBadgeText.split(" • ")
                 val engDay = badgeParts.firstOrNull().orEmpty()
                 val arabDay = badgeParts.getOrNull(1).orEmpty()
-
-                Text(
-                    text = buildAnnotatedString {
-                        append(engDay)
-                        if (arabDay.isNotEmpty()) {
-                            append("  ")
-                            pushStyle(
-                                SpanStyle(
-                                    fontFamily = AmiriFontFamily,
-                                    fontWeight = FontWeight.Bold,
-                                    color = colors.accentGold,
-                                    fontSize = if (isTightDisplay) 14.sp else 15.sp
-                                )
-                            )
-                            append(arabDay)
-                            pop()
-                        }
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontSize = if (isTightDisplay) 12.5.sp else 13.5.sp,
-                    color = colors.inkSecondary,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    softWrap = false,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier
-                        .weight(1f, fill = false)
-                        .testTag("day_date_badge")
-                )
-
-                Spacer(modifier = Modifier.width(8.dp))
+                val compactCityLabel = remember(uiState.selectedCity.name) {
+                    val segments = uiState.selectedCity.name
+                        .split(",")
+                        .map { it.trim() }
+                        .filter { it.isNotEmpty() }
+                    if (segments.size > 1 && uiState.selectedCity.name.length > 14) {
+                        segments.first()
+                    } else {
+                        uiState.selectedCity.name
+                    }
+                }
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    modifier = Modifier
+                        .weight(0.46f)
+                        .testTag("day_date_badge")
                 ) {
-                    // Bare GPS icon trigger (40dp clean hit area)
+                    AutoSizeSingleLineText(
+                        text = engDay,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxFontSize = if (isTightDisplay) 12.5.sp else 13.5.sp,
+                        minFontSize = 10.sp,
+                        color = colors.inkSecondary,
+                        fontWeight = FontWeight.Medium
+                    )
+                    if (arabDay.isNotEmpty()) {
+                        Text(
+                            text = arabDay,
+                            style = arabicCalligraphyStyle(
+                                fontSize = if (isTightDisplay) 13.5.sp else 14.5.sp,
+                                fontWeight = FontWeight.Bold
+                            ),
+                            color = colors.accentGold,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(6.dp))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.End,
+                    modifier = Modifier.weight(0.54f)
+                ) {
+                    // Bare GPS icon trigger
                     IconButton(
                         onClick = {
                             locationPermissionLauncher.launch(
@@ -222,7 +236,7 @@ fun PrayerHomeScreenContent(
                             )
                         },
                         modifier = Modifier
-                            .size(36.dp)
+                            .size(34.dp)
                             .testTag("gps_status_badge")
                     ) {
                         Icon(
@@ -233,27 +247,27 @@ fun PrayerHomeScreenContent(
                         )
                     }
 
-                    // Borderless City Selector text + subtle chevron
+                    // Borderless Compact City Selector (tapping opens full location modal)
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(2.dp),
                         modifier = Modifier
+                            .weight(1f, fill = false)
                             .clip(RoundedCornerShape(8.dp))
                             .appleSpringClickable(shape = RoundedCornerShape(8.dp)) {
                                 showLocationSearchModal = true
                             }
-                            .padding(horizontal = 6.dp, vertical = 6.dp)
+                            .padding(horizontal = 5.dp, vertical = 6.dp)
                             .testTag("city_dropdown_selector")
                     ) {
-                        Text(
-                            text = uiState.selectedCity.name,
+                        AutoSizeSingleLineText(
+                            text = compactCityLabel,
                             style = MaterialTheme.typography.labelLarge,
-                            fontSize = if (isTightDisplay) 12.5.sp else 13.5.sp,
+                            maxFontSize = if (isTightDisplay) 12.5.sp else 13.5.sp,
+                            minFontSize = 10.sp,
                             color = colors.inkPrimary,
                             fontWeight = FontWeight.Medium,
-                            maxLines = 1,
-                            softWrap = false,
-                            overflow = TextOverflow.Ellipsis
+                            modifier = Modifier.weight(1f, fill = false)
                         )
                         Icon(
                             imageVector = Icons.Rounded.KeyboardArrowDown,
@@ -270,7 +284,7 @@ fun PrayerHomeScreenContent(
                             onCycleThemeMode()
                         },
                         modifier = Modifier
-                            .size(36.dp)
+                            .size(34.dp)
                             .testTag("theme_quick_toggle_button")
                     ) {
                         Icon(
@@ -477,34 +491,32 @@ fun PrayerHomeScreenContent(
                 }
             }
 
-            // 4. Collapsible Prohibited Solar Times (Makruh) — Single Calm Inset Row
+            // 4. Collapsible Prohibited Solar Times (Makruh) — Zero-Ellipsis Horological Preview
             if (uiState.solarWarnings.isNotEmpty()) {
                 val anyActiveSolarWarning = uiState.solarWarnings.any { it.isActiveNow }
                 val activeSolarTitle = uiState.solarWarnings.firstOrNull { it.isActiveNow }?.title
-                val summaryRanges = uiState.solarWarnings.joinToString(" · ") { w ->
-                    "${w.title} ${PrayerTimeCalculator.formatMinutesTo12Hour(w.startMinutes)}"
-                }
 
                 SwissInsetGroup(
                     borderColor = if (anyActiveSolarWarning) colors.accentCoral.copy(alpha = 0.5f) else colors.hairline,
                     containerColor = if (anyActiveSolarWarning) colors.accentCoralWash else colors.surfaceCard,
                     modifier = Modifier.testTag("collapsible_solar_warning_banner")
                 ) {
-                    Row(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { isSolarBannerExpanded = !isSolarBannerExpanded }
                             .padding(horizontal = 16.dp, vertical = 13.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(7.dp)
+                                horizontalArrangement = Arrangement.spacedBy(7.dp),
+                                modifier = Modifier.weight(1f)
                             ) {
                                 if (anyActiveSolarWarning) {
                                     Box(
@@ -525,24 +537,62 @@ fun PrayerHomeScreenContent(
                                     fontWeight = FontWeight.Medium
                                 )
                             }
-                            if (!isSolarBannerExpanded) {
-                                Text(
-                                    text = summaryRanges,
-                                    style = MaterialTheme.typography.labelSmall.asMonoPrecision(),
-                                    fontSize = 10.sp,
-                                    color = colors.inkTertiary,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
+
+                            Icon(
+                                imageVector = if (isSolarBannerExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
+                                contentDescription = if (isSolarBannerExpanded) "Collapse prohibited solar times" else "Expand prohibited solar times",
+                                tint = colors.inkTertiary,
+                                modifier = Modifier.size(18.dp)
+                            )
                         }
 
-                        Icon(
-                            imageVector = if (isSolarBannerExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
-                            contentDescription = if (isSolarBannerExpanded) "Collapse prohibited solar times" else "Expand prohibited solar times",
-                            tint = colors.inkTertiary,
-                            modifier = Modifier.size(18.dp)
-                        )
+                        if (!isSolarBannerExpanded) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                uiState.solarWarnings.forEachIndexed { idx, warning ->
+                                    val shortLabel = when {
+                                        warning.id.contains("SUNRISE", ignoreCase = true) ||
+                                            warning.title.contains("Rising", ignoreCase = true) -> "SUNRISE"
+                                        warning.id.contains("ZENITH", ignoreCase = true) ||
+                                            warning.id.contains("ZAWAL", ignoreCase = true) ||
+                                            warning.title.contains("Head", ignoreCase = true) -> "ZAWAL"
+                                        else -> "SUNSET"
+                                    }
+                                    val align = when (idx) {
+                                        0 -> Alignment.Start
+                                        uiState.solarWarnings.lastIndex -> Alignment.End
+                                        else -> Alignment.CenterHorizontally
+                                    }
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        horizontalAlignment = align,
+                                        verticalArrangement = Arrangement.spacedBy(1.dp)
+                                    ) {
+                                        AutoSizeSingleLineText(
+                                            text = shortLabel,
+                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                fontFamily = IbmPlexMonoFontFamily,
+                                                letterSpacing = 0.6.sp
+                                            ),
+                                            maxFontSize = 9.sp,
+                                            minFontSize = 7.5.sp,
+                                            color = if (warning.isActiveNow) colors.accentCoral else colors.inkTertiary
+                                        )
+                                        AutoSizeSingleLineText(
+                                            text = PrayerTimeCalculator.formatMinutesTo12Hour(warning.startMinutes),
+                                            style = MaterialTheme.typography.labelSmall.asMonoPrecision(),
+                                            maxFontSize = 10.5.sp,
+                                            minFontSize = 8.5.sp,
+                                            color = if (warning.isActiveNow) colors.accentCoral else colors.inkSecondary,
+                                            fontWeight = if (warning.isActiveNow) FontWeight.SemiBold else FontWeight.Medium
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     AnimatedVisibility(
@@ -646,7 +696,7 @@ private fun PrayerHeroInnerContent(
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(7.dp),
-                modifier = Modifier.weight(1f, fill = false)
+                modifier = Modifier.weight(1f)
             ) {
                 Box(
                     modifier = Modifier
@@ -660,38 +710,35 @@ private fun PrayerHeroInnerContent(
                             }
                         )
                 )
-                Text(
+                AutoSizeSingleLineText(
                     text = uiState.heroHeaderStatusLabel.uppercase(),
                     style = MaterialTheme.typography.labelSmall.copy(
                         fontFamily = IbmPlexMonoFontFamily,
-                        letterSpacing = 1.1.sp
+                        letterSpacing = 0.9.sp
                     ),
-                    fontSize = if (isTightDisplay) 10.sp else 10.5.sp,
+                    maxFontSize = if (isTightDisplay) 10.sp else 10.5.sp,
+                    minFontSize = 8.sp,
                     color = if (uiState.isUrgentEndOfWindow || uiState.isIshaMissedAfterMidnight) {
                         colors.accentCoral
                     } else {
                         colors.accentGold
                     },
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    softWrap = false,
-                    overflow = TextOverflow.Ellipsis
+                    fontWeight = FontWeight.Medium
                 )
             }
 
             Spacer(modifier = Modifier.width(8.dp))
 
-            Text(
+            AutoSizeSingleLineText(
                 text = uiState.heroSolarBadgeText,
                 style = MaterialTheme.typography.labelSmall.asMonoPrecision(),
-                fontSize = if (isTightDisplay) 10.sp else 10.5.sp,
-                color = colors.inkTertiary,
-                maxLines = 1,
-                softWrap = false
+                maxFontSize = if (isTightDisplay) 10.sp else 10.5.sp,
+                minFontSize = 8.5.sp,
+                color = colors.inkTertiary
             )
         }
 
-        // Oversized Swiss Display Prayer Title + Quiet Arabic + Live Countdown
+        // Oversized Swiss Display Prayer Title + Full Unclipped Arabic + Live Countdown
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(
                 verticalAlignment = Alignment.Bottom,
@@ -709,29 +756,28 @@ private fun PrayerHeroInnerContent(
                 )
                 Text(
                     text = featuredPrayer?.nameArabic ?: "العصر",
-                    style = MaterialTheme.typography.headlineSmall.copy(fontFamily = AmiriFontFamily),
-                    fontSize = if (isTightDisplay) 23.sp else 27.sp,
+                    style = arabicCalligraphyStyle(
+                        fontSize = if (isTightDisplay) 23.sp else 27.sp,
+                        fontWeight = FontWeight.Bold
+                    ),
                     color = colors.accentGold,
-                    fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     softWrap = false,
-                    modifier = Modifier.padding(bottom = 5.dp)
+                    modifier = Modifier.padding(bottom = 3.dp)
                 )
             }
 
-            Text(
+            AutoSizeSingleLineText(
                 text = uiState.heroCountdownSubtitleText,
                 style = MaterialTheme.typography.titleLarge.withTabularDigits(),
-                fontSize = if (isTightDisplay) 17.sp else 20.sp,
+                maxFontSize = if (isTightDisplay) 17.sp else 20.sp,
+                minFontSize = 12.5.sp,
                 color = when {
                     uiState.isUrgentEndOfWindow || uiState.isIshaMissedAfterMidnight -> colors.accentCoral
                     uiState.isJamaahTimePassed -> colors.accentGold
                     else -> colors.inkSecondary
                 },
                 fontWeight = FontWeight.Normal,
-                maxLines = 1,
-                softWrap = false,
-                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.testTag("hero_countdown_status_text")
             )
         }
@@ -762,75 +808,97 @@ private fun PrayerHeroInnerContent(
         // Borderless 3-column Horological Schedule Strip
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.Top
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                AutoSizeSingleLineText(
                     text = uiState.heroLeftTimeLabel.uppercase(),
                     style = MaterialTheme.typography.labelSmall.copy(
                         fontFamily = IbmPlexMonoFontFamily,
-                        letterSpacing = 0.8.sp
+                        letterSpacing = 0.7.sp
                     ),
-                    fontSize = 9.5.sp,
+                    maxFontSize = 9.5.sp,
+                    minFontSize = 8.sp,
                     color = colors.inkTertiary
                 )
-                Text(
+                AutoSizeSingleLineText(
                     text = uiState.heroLeftTimeValue.ifEmpty { featuredAdhan },
                     style = MaterialTheme.typography.titleMedium.asMonoPrecision(),
-                    fontSize = if (isTightDisplay) 13.5.sp else 15.sp,
+                    maxFontSize = if (isTightDisplay) 13.5.sp else 15.sp,
+                    minFontSize = 11.sp,
                     color = colors.inkPrimary,
                     fontWeight = FontWeight.Medium
                 )
             }
 
-            // Tappable Jama'ah Column
+            // Tappable Jama'ah Column with crisp vector Edit icon
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(2.dp),
                 modifier = Modifier
+                    .weight(1f)
                     .clip(RoundedCornerShape(8.dp))
                     .appleSpringClickable(shape = RoundedCornerShape(8.dp)) {
                         featuredPrayer?.let { onEditJamaahClicked(it) }
                     }
-                    .padding(horizontal = 8.dp, vertical = 2.dp)
+                    .padding(horizontal = 4.dp, vertical = 2.dp)
                     .testTag("hero_jamaah_pill")
             ) {
-                Text(
-                    text = if (featuredPrayer?.settingsKey == "JUMUAH") "JUMU'AH ✎" else "JAMA'AH ✎",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontFamily = IbmPlexMonoFontFamily,
-                        letterSpacing = 0.8.sp
-                    ),
-                    fontSize = 9.5.sp,
-                    color = colors.accentGold
-                )
-                Text(
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    AutoSizeSingleLineText(
+                        text = if (featuredPrayer?.settingsKey == "JUMUAH") "JUMU'AH" else "JAMA'AH",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontFamily = IbmPlexMonoFontFamily,
+                            letterSpacing = 0.7.sp
+                        ),
+                        maxFontSize = 9.5.sp,
+                        minFontSize = 8.sp,
+                        color = colors.accentGold
+                    )
+                    Icon(
+                        imageVector = Icons.Rounded.Edit,
+                        contentDescription = "Edit Jama'ah time",
+                        tint = colors.accentGold,
+                        modifier = Modifier.size(10.dp)
+                    )
+                }
+                AutoSizeSingleLineText(
                     text = featuredJamaah,
                     style = MaterialTheme.typography.titleMedium.asMonoPrecision(),
-                    fontSize = if (isTightDisplay) 13.5.sp else 15.sp,
+                    maxFontSize = if (isTightDisplay) 13.5.sp else 15.sp,
+                    minFontSize = 11.sp,
                     color = colors.accentGold,
                     fontWeight = FontWeight.SemiBold
                 )
             }
 
             Column(
+                modifier = Modifier.weight(1f),
                 horizontalAlignment = Alignment.End,
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
-                Text(
+                AutoSizeSingleLineText(
                     text = "ENDS",
                     style = MaterialTheme.typography.labelSmall.copy(
                         fontFamily = IbmPlexMonoFontFamily,
-                        letterSpacing = 0.8.sp
+                        letterSpacing = 0.7.sp
                     ),
-                    fontSize = 9.5.sp,
+                    maxFontSize = 9.5.sp,
+                    minFontSize = 8.sp,
                     color = colors.inkTertiary
                 )
-                Text(
+                AutoSizeSingleLineText(
                     text = featuredEnd,
                     style = MaterialTheme.typography.titleMedium.asMonoPrecision(),
-                    fontSize = if (isTightDisplay) 13.5.sp else 15.sp,
+                    maxFontSize = if (isTightDisplay) 13.5.sp else 15.sp,
+                    minFontSize = 11.sp,
                     color = colors.inkSecondary,
                     fontWeight = FontWeight.Normal
                 )
@@ -954,22 +1022,22 @@ private fun SwissPrayerRowItem(
                         )
                         Text(
                             text = prayer.nameArabic,
-                            style = MaterialTheme.typography.bodyMedium.copy(fontFamily = AmiriFontFamily),
-                            fontSize = if (isCompact) 14.5.sp else 15.5.sp,
+                            style = arabicCalligraphyStyle(
+                                fontSize = if (isCompact) 14.5.sp else 15.5.sp,
+                                fontWeight = FontWeight.Bold
+                            ),
                             color = if (isHighlighted) colors.accentGold else colors.inkTertiary,
-                            fontWeight = FontWeight.Bold,
                             maxLines = 1,
                             softWrap = false
                         )
                     }
 
-                    Text(
+                    AutoSizeSingleLineText(
                         text = "$pstFormatted – $endFormatted",
                         style = MaterialTheme.typography.labelSmall.asMonoPrecision(),
-                        fontSize = 10.sp,
-                        color = colors.inkTertiary,
-                        maxLines = 1,
-                        softWrap = false
+                        maxFontSize = 10.sp,
+                        minFontSize = 8.5.sp,
+                        color = colors.inkTertiary
                     )
                 }
             }
@@ -1127,19 +1195,18 @@ private fun SolarWarningRowItem(
             style = MaterialTheme.typography.bodySmall,
             color = if (item.isActiveNow) colors.accentCoral else colors.inkSecondary,
             fontWeight = if (item.isActiveNow) FontWeight.SemiBold else FontWeight.Normal,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+            maxLines = 2,
             modifier = Modifier.weight(1f)
         )
         Spacer(modifier = Modifier.width(12.dp))
-        Text(
+        AutoSizeSingleLineText(
             text = "$startFormatted – $endFormatted",
             style = MaterialTheme.typography.labelSmall.asMonoPrecision(),
+            maxFontSize = 10.5.sp,
+            minFontSize = 8.5.sp,
             color = if (item.isActiveNow) colors.accentCoral else colors.inkPrimary,
             fontWeight = FontWeight.Medium,
-            textAlign = TextAlign.End,
-            maxLines = 1,
-            softWrap = false
+            textAlign = TextAlign.End
         )
     }
 }

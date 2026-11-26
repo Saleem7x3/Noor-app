@@ -18,25 +18,28 @@
 - **True Islamic Midnight & Late-Night Isha**: Calculates true solar Islamic midnight (midpoint between Maghrib and Fajr) and keeps unprayed Isha actionable on the hero screen until Fajr.
 - **Prohibited Solar Windows (Makruh)**: Collapsible daily tracker highlighting Sunrise, Zawal (solar noon), and Sunset windows when active.
 
-### Editorial Swiss Minimal UI & Themes
+### Editorial Swiss Minimal UI, Scaling & Themes
 - **Dual Theme System**: Switch seamlessly between **System Auto**, **Apple White** (warm gallery off-white `#F6F6F4` & pure white inset surfaces), and true **OLED Dark** (`#000000` canvas & obsidian surfaces), persisted via DataStore.
-- **Crafted Typography**: Locally bundled **DM Sans** (editorial display & UI), **IBM Plex Mono** (tabular `tnum` horological countdowns & timestamps), and **Amiri** (Arabic calligraphy).
-- **Decluttered Layout**: Open typographic active-prayer hero directly on the canvas, single grouped inset lists divided by `0.5dp` hairlines, critically damped motion, and a minimal floating pill navigation bar.
+- **Switchable Prayer Hero Style**: Choose between the framed **Wave Card** with calm multi-layered animated solar waves (default) or the borderless **Minimal Editorial** typographic hero in **Settings → Appearance**.
+- **Bottom Dynamic Island Alert Squircle**: Persistent Qaza Pending (`Log 1`), locked prayer alerts, status notices, and 4-second Undo prompts live inside a floating squircle positioned above the **Prayers** and **Analytics** navigation buttons, morphing smoothly in place.
+- **Zero-Ellipsis Responsive Layout & Display Scaling**: Auto-fitting single-line headers, compact top bar (with full city & coordinates on tap), 3-column horological schedule and solar strips, and a **Display & Font Scale** toggle in Settings (**Adaptive** capped scaling vs. **Fixed Scale** locking app typography to 100% regardless of system display zoom).
+- **Crafted Typography & Full Arabic Rendering**: Locally bundled **DM Sans** (editorial display & UI), **IBM Plex Mono** (tabular `tnum` horological countdowns & timestamps), and **Amiri** (Arabic calligraphy configured with full line height and zero negative tracking so sweeping glyphs like `الفجر` never clip).
 
 ### Smart Alerts & Masjid Etiquette
-- **Live Lock Screen Preview & Timeline**: Live digital clock with inline seconds, interactive **Hijri moonsighting offset (`-2d` to `+2d`)**, and a checkpoint progress track for Adhan and Jama'ah.
-- **Multi-Stage Notification Engine**:
+- **Live Lock Screen Preview & Timeline**: Live digital clock with inline seconds, interactive **Hijri moonsighting offset (`-2d` to `+2d`)**, 3-column Start/Adhan/End strip, and a checkpoint progress track for Adhan and Jama'ah.
+- **Doze-Exempt Multi-Stage Notification Engine**:
+  - Uses Android `AlarmManager.setAlarmClock` for primary prayer milestones so alerts fire reliably on time even under aggressive OEM Doze / battery optimization (e.g. Samsung One UI).
   - Configurable **Pre-Adhan** (`Off`, `5m`, `10m`, `15m`) and **Pre-Jama'ah** (`5m`–`30m`) alerts.
-  - Periodic **Unticked Prayer Follow-Up** reminders starting +10m after Jama'ah until marked prayed.
-  - **Urgent End-of-Window Warnings** (`Last 15m`–`45m`) before the prayer window closes.
-  - Per-tier audio customization (**Alarm**, **Chime**, **Silent**, or **Custom** device ringtone/audio file) with live in-app preview.
+  - Periodic **Unticked Prayer Follow-Up** reminders starting +10m after Jama'ah until marked prayed, with working **5m Snooze** (preserving exact window progress) and **Dismiss** suppression for the dismissed window.
+  - **Urgent End-of-Window Warnings** (`Last 15m`–`45m`) before the prayer window closes, plus automatic re-sync whenever permissions are granted on app resume.
+  - Per-tier audio customization (**Alarm**, **Chime**, **Silent**, or **Custom** device ringtone/audio file) with live in-app preview, crisp monochrome status-bar icon, and a **Send Test Notification** button in **Lock & Alert** and **Settings** to verify delivery at any hour.
   - Direct notification shade actions that auto-detect Jama'ah vs. Individual within your configured window.
 - **Masjid Auto-Silence**: Automatically silences sound and vibration for 15 minutes starting at Jama'ah time.
 
 ### Analytics, Qaza Backlog & Daily Athkaar
 - **Editorial KPI Strip**: Instant glance at Today's goal completion, active streak, Jama'ah rate, and on-time consistency.
 - **7-Week Consistency Grid**: Tap any day square to inspect or edit historical prayers (`Jama'ah`, `Individual`, `Qaza Done`, or `Missed`).
-- **Qaza Make-Up Backlog**: Tracks auto-detected missed prayers and manual make-up completions with a persistent top reminder when Qaza is pending.
+- **Qaza Make-Up Backlog**: Tracks auto-detected missed prayers and manual make-up completions, surfaced in both Analytics and the persistent bottom alert squircle.
 - **Daily Athkaar**: Unified Morning, Evening, and Bedtime Athkaar trackers with tactile step counters and completion haptics.
 
 ### Worldwide Location & GPS

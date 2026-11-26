@@ -1,10 +1,12 @@
 package com.example.ui.theme
 
 import androidx.compose.material3.Typography
+import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import com.example.R
 
@@ -34,6 +36,22 @@ fun TextStyle.withTabularDigits(): TextStyle = copy(fontFeatureSettings = "tnum"
 fun TextStyle.asMonoPrecision(): TextStyle = copy(
     fontFamily = IbmPlexMonoFontFamily,
     fontFeatureSettings = "tnum"
+)
+
+/**
+ * Dedicated Arabic calligraphy style that forces 0sp letterSpacing, generous 1.48x lineHeight,
+ * and full platform font padding so HarfBuzz/Skia never clips sweeping trailing glyphs (e.g. الفجر).
+ */
+fun arabicCalligraphyStyle(
+    fontSize: TextUnit,
+    fontWeight: FontWeight = FontWeight.Bold
+): TextStyle = TextStyle(
+    fontFamily = AmiriFontFamily,
+    fontWeight = fontWeight,
+    fontSize = fontSize,
+    lineHeight = (fontSize.value * 1.48f).sp,
+    letterSpacing = 0.sp,
+    platformStyle = PlatformTextStyle(includeFontPadding = true)
 )
 
 /**

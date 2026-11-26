@@ -94,6 +94,29 @@ jobs:
           APK_SIZE=$(du -h "dist-release/${ASSET_NAME}" | awk '{print $1}')
           APK_SHA256=$(awk '{print $1}' dist-release/SHA256SUMS.txt)
 
+          # Extract Latest Build Highlights from release/README.md if present
+          HIGHLIGHTS_FILE="dist-release/RELEASE_NOTES.md"
+          cat <<EOF > "$HIGHLIGHTS_FILE"
+          ## Noor Prayer Android APK
+
+          - **Version**: \`${VERSION_NAME}\` (code \`${VERSION_CODE}\`)
+          - **Artifact**: \`${ASSET_NAME}\` (${APK_SIZE})
+          - **SHA-256**: \`${APK_SHA256}\`
+
+          EOF
+
+          if [ -f "release/README.md" ]; then
+            awk '/^## Latest Build Highlights/{flag=1} /^## Manual Sideload Installation/{flag=0} flag' release/README.md >> "$HIGHLIGHTS_FILE"
+            echo "" >> "$HIGHLIGHTS_FILE"
+          fi
+
+          cat <<EOF >> "$HIGHLIGHTS_FILE"
+          ### Install on Android
+          1. Download \`${ASSET_NAME}\` from the **Assets** section below.
+          2. Open the downloaded APK on your Android device (enable *Install unknown apps* if prompted).
+          3. Grant **Notifications** and **Alarms & Reminders** permissions for on-time prayer alerts, and verify anytime via **Settings → Send Test**.
+          EOF
+
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "release_name=${RELEASE_NAME}" >> "$GITHUB_OUTPUT"
           echo "version_name=${VERSION_NAME}" >> "$GITHUB_OUTPUT"
@@ -110,16 +133,7 @@ jobs:
           prerelease: ${{ inputs.prerelease == true }}
           make_latest: ${{ inputs.prerelease != true }}
           generate_release_notes: true
-          body: |
-            ## Noor Prayer Android APK
-
-            - **Version**: `${{ steps.meta.outputs.version_name }}` (code `${{ steps.meta.outputs.version_code }}`)
-            - **Artifact**: `${{ steps.meta.outputs.asset_name }}` (${{ steps.meta.outputs.apk_size }})
-            - **SHA-256**: `${{ steps.meta.outputs.apk_sha256 }}`
-
-            ### Install on Android
-            1. Download `${{ steps.meta.outputs.asset_name }}` from the **Assets** section below.
-            2. Open the downloaded APK on your Android device (enable *Install unknown apps* if prompted).
+          body_path: dist-release/RELEASE_NOTES.md
           files: |
             dist-release/${{ steps.meta.outputs.asset_name }}
             dist-release/SHA256SUMS.txt

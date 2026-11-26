@@ -11,13 +11,13 @@ Pushing an updated `.apk` in this directory to `main` or `master` (or running th
 
 ## Latest Build Highlights
 
+- **Zero-Ellipsis Responsive Layout & Display Scaling**: Eliminated all `"text..."` truncations across every screen with auto-fitting typography, a compact single-row Prayers top bar (full city & coordinates on tap), 3-column horological schedule and solar previews, and a persisted **Settings → Appearance → Display & Font Scale** toggle (**Adaptive** vs. **Fixed Scale**).
+- **Full Arabic Calligraphy & Crisp Vector Icons**: Dedicated Amiri calligraphy styling (`0sp` letter spacing, generous line height) prevents clipped trailing letters (`الفجر`), and fallback Unicode pencil icons are replaced with crisp Material vector edit icons.
+- **Hardened Notification & Exact-Alarm Pipeline**: Upgraded primary prayer triggers to Doze-exempt `setAlarmClock` alarms for Samsung/Android 12–15+ reliability, fixed Snooze epoch preservation, fixed Dismiss re-arm suppression, added a monochrome status-bar notification icon, auto-resynced alarms on permission return, and added a real **Send Test Notification** button in **Lock & Alert** and **Settings**.
 - **Bottom Dynamic Island Alert Squircle**: All in-app alerts—persistent Qaza Pending (`Log 1`), locked prayer notices, status feedback, and the 4-second Undo prompt—live in a single floating squircle directly above the **Prayers** and **Analytics** dock buttons and morph smoothly in place.
-- **Switchable Wave / Minimal Hero Card**: Restored the calm, multi-layered animated **Wave Card** hero as the default, with a persisted **Settings → Appearance** toggle to switch instantaneously to the borderless **Minimal Editorial** hero.
-- **Dual Themes**: Seamless switching between **System Auto**, **Apple White**, and true **OLED Dark** via Settings or the header quick toggle.
-- **Bundled Editorial Typography**: Locally bundled **DM Sans**, **IBM Plex Mono** (tabular numerals), and **Amiri** Arabic calligraphy.
-- **Astronomical Accuracy**: Muslim World League (MWL 18°/17°) calculation, true solar Islamic midnight tracking (keeping late-night Isha active until Fajr), Friday Jumu'ah override, and collapsible Makruh solar warnings.
-- **Smart Multi-Stage Notifications**: Pre-Adhan, Pre-Jama'ah, Post-Jama'ah follow-ups, urgent end-of-window alerts, per-tier custom audio preview, Masjid Auto-Silence (15m), and notification shade quick-mark actions.
-- **Habit Analytics & Qaza**: Editorial KPI strip, interactive 7-week consistency grid with historical editing, Qaza make-up counter, and unified Morning/Evening/Bedtime Athkaar trackers.
+- **Switchable Wave / Minimal Hero Card**: Calm multi-layered animated **Wave Card** hero by default, with a persisted **Settings → Appearance** toggle to switch instantaneously to the borderless **Minimal Editorial** hero.
+- **Dual Themes & Bundled Typography**: Seamless switching between **System Auto**, **Apple White**, and true **OLED Dark**, paired with locally bundled **DM Sans**, **IBM Plex Mono**, and **Amiri**.
+- **Astronomical Accuracy & Habit Analytics**: Muslim World League (MWL 18°/17°) calculation, true solar Islamic midnight tracking, Friday Jumu'ah override, collapsible Makruh solar warnings, interactive 7-week consistency grid, Qaza backlog, and daily Athkaar trackers.
 
 ## Manual Sideload Installation
 

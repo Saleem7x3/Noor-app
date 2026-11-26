@@ -21,14 +21,18 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.GpsFixed
+import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -45,15 +49,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.domain.PrayerTimeCalculator
 import com.example.notification.PrayerNotificationHelper
 import com.example.ui.components.AppleHairlineDivider
 import com.example.ui.components.AppleSegmentedControl
+import com.example.ui.components.AutoSizeSingleLineText
 import com.example.ui.components.SwissInsetGroup
 import com.example.ui.components.SwissSectionLabel
 import com.example.ui.theme.AppThemeMode
+import com.example.ui.theme.DisplayScaleMode
 import com.example.ui.theme.HeroCardStyle
 import com.example.ui.theme.NoorTheme
 import com.example.ui.theme.asMonoPrecision
@@ -76,6 +82,8 @@ fun ArchitectureBlueprintScreenContent(
     onUpdateAutoSilenceDuringJamaah: (Boolean) -> Unit = {},
     onUpdateThemeMode: (AppThemeMode) -> Unit = {},
     onUpdateHeroCardStyle: (HeroCardStyle) -> Unit = {},
+    onUpdateDisplayScaleMode: (DisplayScaleMode) -> Unit = {},
+    onBannerMessage: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -211,6 +219,27 @@ fun ArchitectureBlueprintScreenContent(
         onRequestGpsLocation()
     }
 
+    val nextPrayerName = uiState.featuredPrayer?.nameEnglish ?: "Fajr"
+    val nextPrayerTime = uiState.featuredPrayer?.let {
+        PrayerTimeCalculator.formatMinutesTo12Hour(it.pstMinutes)
+    } ?: "05:00 AM"
+
+    val testNotifPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            PrayerNotificationHelper.showTestNotification(
+                context = context,
+                nextPrayerName = nextPrayerName,
+                nextPrayerTimeFormatted = nextPrayerTime,
+                canScheduleExactAlarms = uiState.canScheduleExactAlarms
+            )
+            onBannerMessage("Test notification sent ✓")
+        } else {
+            onBannerMessage("Allow notifications in Android Settings to receive prayer alerts")
+        }
+    }
+
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -272,6 +301,35 @@ fun ArchitectureBlueprintScreenContent(
                         color = colors.inkSecondary
                     )
                 }
+
+                AppleHairlineDivider(modifier = Modifier.padding(horizontal = 16.dp))
+
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "Display & Font Scale",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = colors.inkPrimary,
+                        fontWeight = FontWeight.Medium
+                    )
+                    AppleSegmentedControl(
+                        options = listOf(
+                            DisplayScaleMode.ADAPTIVE_CAPPED to "Adaptive",
+                            DisplayScaleMode.FIXED_SCALE to "Fixed Scale"
+                        ),
+                        selected = uiState.displayScaleMode,
+                        onSelect = onUpdateDisplayScaleMode,
+                        optionTagPrefix = "display_scale_option",
+                        modifier = Modifier.testTag("settings_display_scale_segmented_control")
+                    )
+                    Text(
+                        text = "Adaptive caps extreme system scaling cleanly; Fixed Scale locks app typography to 100% ignoring system zoom.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.inkSecondary
+                    )
+                }
             }
         }
 
@@ -279,6 +337,78 @@ fun ArchitectureBlueprintScreenContent(
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             SwissSectionLabel(title = "Pre-Prayer Reminders")
             SwissInsetGroup(modifier = Modifier.testTag("settings_pre_prayer_reminders_card")) {
+                // 2.0 Notification Delivery Verification & Real Test Trigger
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Text(
+                            text = "Notification Delivery Check",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = colors.inkPrimary,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = if (uiState.canScheduleExactAlarms) {
+                                "Exact alarms armed · Verify alerts anytime"
+                            } else {
+                                "Exact alarm permission needed for on-time alerts"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (uiState.canScheduleExactAlarms) colors.inkSecondary else colors.accentCoral
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    OutlinedButton(
+                        onClick = {
+                            val sent = PrayerNotificationHelper.showTestNotification(
+                                context = context,
+                                nextPrayerName = nextPrayerName,
+                                nextPrayerTimeFormatted = nextPrayerTime,
+                                canScheduleExactAlarms = uiState.canScheduleExactAlarms
+                            )
+                            if (!sent && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                testNotifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            } else if (sent) {
+                                onBannerMessage("Test notification sent ✓")
+                            } else {
+                                onBannerMessage("Notifications are disabled in system settings")
+                            }
+                        },
+                        shape = RoundedCornerShape(9.dp),
+                        border = BorderStroke(0.5.dp, colors.accentGold.copy(alpha = 0.6f)),
+                        contentPadding = PaddingValues(horizontal = 11.dp, vertical = 6.dp),
+                        modifier = Modifier
+                            .height(34.dp)
+                            .testTag("settings_send_test_notification_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.NotificationsActive,
+                            contentDescription = null,
+                            tint = colors.accentGold,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(5.dp))
+                        AutoSizeSingleLineText(
+                            text = "Send Test",
+                            style = MaterialTheme.typography.labelLarge,
+                            maxFontSize = 11.5.sp,
+                            minFontSize = 9.5.sp,
+                            color = colors.accentGold,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+
+                AppleHairlineDivider(modifier = Modifier.padding(horizontal = 16.dp))
+
                 // 2A. Pre-Adhan
                 Column(
                     modifier = Modifier.padding(16.dp),
@@ -692,15 +822,13 @@ private fun <T> SwissChoiceStrip(
                     .testTag(tag),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
+                AutoSizeSingleLineText(
                     text = label,
                     style = MaterialTheme.typography.labelMedium.asMonoPrecision(),
-                    fontSize = 11.sp,
+                    maxFontSize = 11.sp,
+                    minFontSize = 8.sp,
                     color = if (isSelected) activeTextColor else colors.inkSecondary,
-                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                    maxLines = 1,
-                    softWrap = false,
-                    overflow = TextOverflow.Ellipsis
+                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
                 )
             }
         }
@@ -743,8 +871,7 @@ private fun SoundTierSelectorRow(
                     text = displayLabel,
                     style = MaterialTheme.typography.labelSmall.asMonoPrecision(),
                     color = colors.inkTertiary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    maxLines = 2
                 )
             }
 

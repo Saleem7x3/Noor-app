@@ -41,7 +41,9 @@ data class AlarmLoopRuntimeState(
     val savedCityIsGps: Boolean = false,
     val lastAthkaarDateIso: String? = null,
     val themeMode: String = "SYSTEM_AUTO",
-    val heroCardStyle: String = "WAVE_CARD"
+    val heroCardStyle: String = "WAVE_CARD",
+    val displayScaleMode: String = "ADAPTIVE_CAPPED",
+    val dismissedPrayerKey: String? = null
 )
 
 class PrayerAlarmDataStore(private val context: Context) {
@@ -69,6 +71,8 @@ class PrayerAlarmDataStore(private val context: Context) {
         val LAST_ATHKAAR_DATE_ISO = stringPreferencesKey("last_athkaar_date_iso")
         val THEME_MODE = stringPreferencesKey("app_theme_mode")
         val HERO_CARD_STYLE = stringPreferencesKey("hero_card_style")
+        val DISPLAY_SCALE_MODE = stringPreferencesKey("display_scale_mode")
+        val DISMISSED_PRAYER_KEY = stringPreferencesKey("dismissed_prayer_key")
     }
 
     val runtimeStateFlow: Flow<AlarmLoopRuntimeState> = context.prayerAlarmDataStore.data.map { prefs ->
@@ -95,7 +99,9 @@ class PrayerAlarmDataStore(private val context: Context) {
             savedCityIsGps = prefs[Keys.SAVED_CITY_IS_GPS] ?: false,
             lastAthkaarDateIso = prefs[Keys.LAST_ATHKAAR_DATE_ISO]?.takeIf { it.isNotBlank() },
             themeMode = prefs[Keys.THEME_MODE]?.takeIf { it.isNotBlank() } ?: "SYSTEM_AUTO",
-            heroCardStyle = prefs[Keys.HERO_CARD_STYLE]?.takeIf { it.isNotBlank() } ?: "WAVE_CARD"
+            heroCardStyle = prefs[Keys.HERO_CARD_STYLE]?.takeIf { it.isNotBlank() } ?: "WAVE_CARD",
+            displayScaleMode = prefs[Keys.DISPLAY_SCALE_MODE]?.takeIf { it.isNotBlank() } ?: "ADAPTIVE_CAPPED",
+            dismissedPrayerKey = prefs[Keys.DISMISSED_PRAYER_KEY]?.takeIf { it.isNotBlank() }
         )
     }
 
@@ -172,6 +178,24 @@ class PrayerAlarmDataStore(private val context: Context) {
     suspend fun setHeroCardStyle(styleName: String) {
         context.prayerAlarmDataStore.edit { prefs ->
             prefs[Keys.HERO_CARD_STYLE] = styleName
+        }
+    }
+
+    suspend fun setDisplayScaleMode(modeName: String) {
+        context.prayerAlarmDataStore.edit { prefs ->
+            prefs[Keys.DISPLAY_SCALE_MODE] = modeName
+        }
+    }
+
+    suspend fun recordDismissedPrayerKey(prayerWindowKey: String) {
+        context.prayerAlarmDataStore.edit { prefs ->
+            prefs[Keys.DISMISSED_PRAYER_KEY] = prayerWindowKey
+        }
+    }
+
+    suspend fun clearDismissedPrayerKey() {
+        context.prayerAlarmDataStore.edit { prefs ->
+            prefs[Keys.DISMISSED_PRAYER_KEY] = ""
         }
     }
 

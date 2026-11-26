@@ -26,6 +26,7 @@ import com.example.notification.ExactPrayerAlarmScheduler
 import com.example.notification.PrayerNaggingForegroundService
 import com.example.notification.PrayerNotificationHelper
 import com.example.ui.theme.AppThemeMode
+import com.example.ui.theme.DisplayScaleMode
 import com.example.ui.theme.HeroCardStyle
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -144,7 +145,8 @@ data class PrayerDashboardUiState(
     val autoSilenceDuringJamaah: Boolean = true,
     val canScheduleExactAlarms: Boolean = true,
     val themeMode: AppThemeMode = AppThemeMode.SYSTEM_AUTO,
-    val heroCardStyle: HeroCardStyle = HeroCardStyle.WAVE_CARD
+    val heroCardStyle: HeroCardStyle = HeroCardStyle.WAVE_CARD,
+    val displayScaleMode: DisplayScaleMode = DisplayScaleMode.ADAPTIVE_CAPPED
 )
 
 class PrayerHabitViewModel(
@@ -1270,7 +1272,8 @@ class PrayerHabitViewModel(
             autoSilenceDuringJamaah = ctrl.alarmRuntime.autoSilenceDuringJamaah,
             canScheduleExactAlarms = alarmScheduler.canScheduleExactAlarms(),
             themeMode = AppThemeMode.fromStoredName(ctrl.alarmRuntime.themeMode),
-            heroCardStyle = HeroCardStyle.fromStoredName(ctrl.alarmRuntime.heroCardStyle)
+            heroCardStyle = HeroCardStyle.fromStoredName(ctrl.alarmRuntime.heroCardStyle),
+            displayScaleMode = DisplayScaleMode.fromStoredName(ctrl.alarmRuntime.displayScaleMode)
         )
     }
 
@@ -1298,6 +1301,14 @@ class PrayerHabitViewModel(
         )
     }
 
+    fun refreshPermissionsAndResyncAlarms() {
+        _tickerSeconds.value += 1L
+        armDailyExactAlarmsForCity(
+            city = _selectedCity.value,
+            postActiveWindowNotificationIfNeeded = false
+        )
+    }
+
     /**
      * Checks on each clock minute boundary while the app is open whether the active unprayed prayer
      * has just reached PST, Pre-Adhan, Adhan, Pre-Jama'ah, or a +10m / periodic 10m post-Jama'ah milestone,
@@ -1307,6 +1318,7 @@ class PrayerHabitViewModel(
         val state = uiState.value
         val featured = state.featuredPrayer ?: return
         if (featured.isPrayed || !state.isFeaturedPrayerActiveWindow) return
+        if (state.alarmRuntimeState.dismissedPrayerKey == "${currentEffectiveDateIso}_${featured.id}") return
 
         val cityTz = PrayerTimeCalculator.getTimeZoneForCity(state.selectedCity)
         val nowCal = Calendar.getInstance(cityTz)
@@ -1539,6 +1551,13 @@ class PrayerHabitViewModel(
         }
     }
 
+    fun updateDisplayScaleMode(mode: DisplayScaleMode) {
+        viewModelScope.launch {
+            alarmDataStore.setDisplayScaleMode(mode.name)
+            showTransientBanner("Display scale: ${mode.displayName}")
+        }
+    }
+
     fun adjustQazaBacklogCount(delta: Int) {
         viewModelScope.launch {
             val state = uiState.value
@@ -1641,6 +1660,7 @@ class PrayerHabitViewModel(
                 }
             }
             repository.togglePrayerCompletion(dateIso, prayer.id, prayer.isPrayed, resolvedJamaah)
+            alarmDataStore.clearDismissedPrayerKey()
             if (willBePrayed) {
                 alarmScheduler.cancelAllAlarmsForPrayer(prayer.id)
                 PrayerNaggingForegroundService.stopNaggingLoop(alarmScheduler.appContext)
@@ -1686,6 +1706,7 @@ class PrayerHabitViewModel(
             }
             repository.markPrayerCompleted(dateIso, targetPrayer.id, resolvedJamaah)
             _snoozedExtraMinutes.value = 0
+            alarmDataStore.clearDismissedPrayerKey()
             alarmScheduler.cancelAllAlarmsForPrayer(targetPrayer.id)
             PrayerNaggingForegroundService.stopNaggingLoop(alarmScheduler.appContext)
             alarmDataStore.clearNaggingLoop(

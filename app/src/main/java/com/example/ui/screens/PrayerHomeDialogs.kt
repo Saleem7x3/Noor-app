@@ -64,7 +64,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -75,11 +74,12 @@ import com.example.data.PrayerItemUiModel
 import com.example.domain.CityLocation
 import com.example.domain.PrayerTimeCalculator
 import com.example.ui.components.AppleHairlineDivider
+import com.example.ui.components.AutoSizeSingleLineText
 import com.example.ui.components.SwissInsetGroup
 import com.example.ui.components.appleSpringClickable
-import com.example.ui.theme.AmiriFontFamily
 import com.example.ui.theme.IbmPlexMonoFontFamily
 import com.example.ui.theme.NoorTheme
+import com.example.ui.theme.arabicCalligraphyStyle
 import com.example.ui.theme.asMonoPrecision
 import com.example.ui.theme.withTabularDigits
 import com.example.viewmodel.PrayerDashboardUiState
@@ -133,10 +133,8 @@ internal fun PrayerCompletionChoiceDialog(
                             )
                             Text(
                                 text = prayer.nameArabic,
-                                style = MaterialTheme.typography.titleMedium.copy(fontFamily = AmiriFontFamily),
-                                fontSize = 19.sp,
-                                color = colors.accentGold,
-                                fontWeight = FontWeight.Bold
+                                style = arabicCalligraphyStyle(fontSize = 19.sp, fontWeight = FontWeight.Bold),
+                                color = colors.accentGold
                             )
                         }
                         Text(
@@ -1035,17 +1033,20 @@ internal fun LocationSearchModalDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
                         Text(
-                            text = "Location",
-                            style = MaterialTheme.typography.titleLarge,
+                            text = uiState.selectedCity.name,
+                            style = MaterialTheme.typography.titleMedium,
                             color = colors.inkPrimary,
                             fontWeight = FontWeight.SemiBold
                         )
                         Text(
-                            text = "${uiState.availableCities.size}+ cities & worldwide search",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = colors.inkSecondary
+                            text = "${uiState.selectedCity.country} · ${String.format(Locale.US, "%.3f", uiState.selectedCity.latitude)}°, ${String.format(Locale.US, "%.3f", uiState.selectedCity.longitude)}°",
+                            style = MaterialTheme.typography.labelSmall.asMonoPrecision(),
+                            color = colors.accentGold
                         )
                     }
 
@@ -1150,10 +1151,12 @@ internal fun LocationSearchModalDialog(
                     ) {
                         Icon(Icons.Rounded.GpsFixed, contentDescription = null, modifier = Modifier.size(15.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text(
+                        AutoSizeSingleLineText(
                             text = "Use Live GPS",
                             style = MaterialTheme.typography.labelLarge,
-                            maxLines = 1
+                            maxFontSize = 13.sp,
+                            minFontSize = 10.sp,
+                            color = colors.surfaceCard
                         )
                     }
 
@@ -1173,11 +1176,12 @@ internal fun LocationSearchModalDialog(
                             modifier = Modifier.size(15.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text(
+                        AutoSizeSingleLineText(
                             text = if (showCustomCoordEntry) "Hide Custom" else "Coordinates",
                             style = MaterialTheme.typography.labelLarge,
-                            color = colors.inkPrimary,
-                            maxLines = 1
+                            maxFontSize = 13.sp,
+                            minFontSize = 10.sp,
+                            color = colors.inkPrimary
                         )
                     }
                 }
@@ -1273,8 +1277,7 @@ internal fun LocationSearchModalDialog(
                                     text = "${city.country} · ${String.format(Locale.US, "%.2f", city.latitude)}°, ${String.format(Locale.US, "%.2f", city.longitude)}°",
                                     style = MaterialTheme.typography.labelSmall.asMonoPrecision(),
                                     color = colors.inkTertiary,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                                    maxLines = 2
                                 )
                             }
 

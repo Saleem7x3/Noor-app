@@ -143,6 +143,7 @@ class PrayerAlarmReceiver : BroadcastReceiver() {
                             resolvedInJamaah -> "(In Jama'ah)"
                             else -> "(Individually)"
                         }
+                        alarmDataStore.clearDismissedPrayerKey()
                         alarmDataStore.clearNaggingLoop(
                             reason = "$prayerName marked as Prayed $modeSuffix via Notification Banner ✓",
                             stageLabel = if (wasQaza) "PRAYED_LATE" else "PRAYED_ON_TIME"
@@ -152,12 +153,17 @@ class PrayerAlarmReceiver : BroadcastReceiver() {
 
                     ExactPrayerAlarmScheduler.ACTION_SNOOZE_5M -> {
                         val nextSnoozeEpoch = System.currentTimeMillis() + (5 * 60_000L)
-                        val minUntilJamaah = intent.getIntExtra(ExactPrayerAlarmScheduler.EXTRA_MIN_UNTIL_JAMAAH, 0)
-                        val snoozedStage = if (minUntilJamaah > 5) {
+                        val minUntilJamaah = if (jamaahEpochMs > 0L) {
+                            ((jamaahEpochMs - nextSnoozeEpoch + 59_999L) / 60_000L).toInt().coerceAtLeast(0)
+                        } else {
+                            (intent.getIntExtra(ExactPrayerAlarmScheduler.EXTRA_MIN_UNTIL_JAMAAH, 0) - 5).coerceAtLeast(0)
+                        }
+                        val snoozedStage = if (minUntilJamaah > 0) {
                             AlarmTriggerType.STAGE_PRE_JAMAAH
                         } else {
                             AlarmTriggerType.STAGE_3_POST_JAMAAH_NAG
                         }
+                        alarmDataStore.clearDismissedPrayerKey()
                         scheduler.cancelAllAlarmsForPrayer(prayerId)
                         scheduler.scheduleExactTrigger(
                             prayerId = prayerId,
@@ -172,7 +178,7 @@ class PrayerAlarmReceiver : BroadcastReceiver() {
                             adhanEpochMillis = adhanEpochMs,
                             jamaahEpochMillis = jamaahEpochMs,
                             windowEndEpochMillis = windowEndEpochMs,
-                            minutesUntilJamaah = (minUntilJamaah - 5).coerceAtLeast(0),
+                            minutesUntilJamaah = minUntilJamaah,
                             nagIteration = 1
                         )
                         PrayerNaggingForegroundService.stopNaggingLoop(context)
@@ -184,6 +190,7 @@ class PrayerAlarmReceiver : BroadcastReceiver() {
                         scheduler.cancelAllAlarmsForPrayer(prayerId)
                         PrayerNaggingForegroundService.stopNaggingLoop(context)
                         PrayerNotificationHelper.cancelNotification(context)
+                        alarmDataStore.recordDismissedPrayerKey("${todayIso}_$prayerId")
                         alarmDataStore.clearNaggingLoop(
                             reason = "$prayerName notification dismissed by user",
                             stageLabel = "DISMISSED"
@@ -215,6 +222,12 @@ class PrayerAlarmReceiver : BroadcastReceiver() {
                                 stageLabel = "PRAYED_ON_TIME"
                             )
                             scheduler.syncAndArmAllDailyAlarms(postActiveWindowNotificationIfNeeded = false)
+                            return@launch
+                        }
+
+                        // 1a. If user explicitly dismissed this prayer window, do not fire intermediate/nag reminders
+                        val dismissedKey = alarmDataStore.runtimeStateFlow.first().dismissedPrayerKey
+                        if (dismissedKey == "${todayIso}_$prayerId" && triggerType != AlarmTriggerType.STAGE_QAZA_ROLLOVER) {
                             return@launch
                         }
 
@@ -395,7 +408,11 @@ class PrayerAlarmReceiver : BroadcastReceiver() {
                                     progressPercent = actualWindowPct,
                                     prayerId = prayerId,
                                     dateIso = todayIso,
-                                    nagIteration = 0
+                                    nagIteration = 0,
+                                    pstEpochMillis = pstEpochMs,
+                                    adhanEpochMillis = effectiveAdhanEpoch,
+                                    jamaahEpochMillis = effectiveJamaahEpoch,
+                                    windowEndEpochMillis = effectiveEndEpoch
                                 )
 
                                 alarmDataStore.recordTriggerActivated(
@@ -500,7 +517,11 @@ class PrayerAlarmReceiver : BroadcastReceiver() {
                                     minutesPassedSinceJamaah = minPassedSinceJamaah.coerceAtLeast(1),
                                     minutesRemainingUntilEnd = minRemainingUntilEnd,
                                     repeatIntervalMinutes = stepMinutes,
-                                    nagIteration = currentIter
+                                    nagIteration = currentIter,
+                                    pstEpochMillis = pstEpochMs,
+                                    adhanEpochMillis = effectiveAdhanEpoch,
+                                    jamaahEpochMillis = effectiveJamaahEpoch,
+                                    windowEndEpochMillis = effectiveEndEpoch
                                 )
 
                                 val stageDesc = if (isUrgentWindow) {
